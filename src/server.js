@@ -230,6 +230,17 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 app.get("/api/me", auth, (req, res) => res.json({ user: req.user }));
+app.get("/api/settings", auth, async (_, res) => {
+  const row = (await query("SELECT hotel_name FROM hotel_settings WHERE id=1")).rows[0];
+  res.json({ hotelName: row?.hotel_name || "Hotelería" });
+});
+app.patch("/api/settings", auth, allow("admin"), async (req, res) => {
+  const body = z.object({ hotelName: z.string().trim().min(2).max(100) }).parse(req.body);
+  const row = (await query("UPDATE hotel_settings SET hotel_name=$1,updated_by=$2,updated_at=now() WHERE id=1 RETURNING hotel_name", [body.hotelName, req.user.id])).rows[0];
+  if (!row) return res.status(503).json({ error: "La configuración todavía no está disponible" });
+  await audit(req.user, "update", "hotel_settings", "1", body);
+  res.json({ hotelName: row.hotel_name });
+});
 
 // Buffer JSON until commit succeeds: a failed audit or payment cannot leave a partial write.
 const post = app.post.bind(app),

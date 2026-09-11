@@ -23,7 +23,7 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 24px;
-  --sidebar-width: 258px;
+  --sidebar-width: 218px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -101,6 +101,8 @@ small { color: var(--muted); }
   box-shadow: 0 0 0 4px var(--success-soft);
   content: "";
 }
+#panel > header .header-actions { display: flex; align-items: center; gap: 9px; }
+#panel > header .header-actions button { min-height: 38px; padding: 8px 12px; }
 #panel > nav {
   position: fixed;
   z-index: 10;
@@ -111,9 +113,9 @@ small { color: var(--muted); }
   width: var(--sidebar-width);
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
+  gap: 4px;
   margin: 0;
-  padding: 27px 15px 20px;
+  padding: 19px 10px 14px;
   overflow-y: auto;
   border: 0;
   border-right: 1px solid rgba(255, 255, 255, .08);
@@ -123,11 +125,11 @@ small { color: var(--muted); }
 }
 #panel > nav::before {
   display: block;
-  padding: 3px 13px 26px;
+  padding: 3px 11px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, .12);
   color: #fff;
-  content: "H  Hotelería";
-  font-size: 19px;
+  content: "H  " attr(data-hotel-name);
+  font-size: 17px;
   font-weight: 850;
   letter-spacing: -.03em;
 }
@@ -143,11 +145,11 @@ small { color: var(--muted); }
 }
 #panel > nav button {
   display: flex;
-  min-height: 44px;
+  min-height: 38px;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 11px 13px;
+  gap: 9px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 11px;
   background: transparent;
@@ -296,12 +298,12 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
 .consumption-row small { display: block; margin-top: 4px; }
 
 /* Dialog sizing and visibility */
-#paymentDialog, #cashCloseDialog { width: min(470px, calc(100% - 28px)); }
+#paymentDialog, #cashCloseDialog, #hotelSettingsDialog { width: min(470px, calc(100% - 28px)); }
 .view[hidden], #panel[hidden], #login[hidden] { display: none !important; }
 #flash:empty { min-height: 0; padding-top: 0; }
 
 @media (max-width: 1120px) {
-  :root { --sidebar-width: 226px; }
+  :root { --sidebar-width: 204px; }
   .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard-grid { grid-template-columns: 1fr; }
 }

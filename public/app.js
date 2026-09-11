@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2});
 const statusClass = (s) => `status-${String(s ?? 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), formConsumptions = [], pendingPaymentConsumptionId = null;
+let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), formConsumptions = [], pendingPaymentConsumptionId = null, hotelSettings = {hotelName:'Hotelería'};
 
 async function api(url, options = {}) {
   const response = await fetch('/api' + url, { ...options, headers: {'Content-Type':'application/json', ...(options.headers || {})} });
@@ -11,6 +11,8 @@ async function api(url, options = {}) {
   return data;
 }
 function flash(message, bad = false) { $('flash').textContent = message; $('flash').className = bad ? 'error' : ''; setTimeout(() => $('flash').textContent = '', 5000); }
+function applyHotelName() { const name=hotelSettings.hotelName || 'Hotelería'; document.title=name+' · Operaciones'; const loginTitle=document.querySelector('#login h1'); if(loginTitle)loginTitle.textContent=name; const nav=document.querySelector('#panel > nav'); if(nav)nav.dataset.hotelName=name; }
+function ensureSettingsControl() { if($('editHotelName'))return; const logout=$('logout'); const actions=document.createElement('div'); actions.className='header-actions'; const edit=document.createElement('button'); edit.id='editHotelName'; edit.type='button'; edit.className='secondary'; edit.textContent='Editar hotel'; actions.append(edit,logout); document.querySelector('#panel > header').append(actions); edit.onclick=()=>{ $('hotelNameInput').value=hotelSettings.hotelName || 'Hotelería'; $('hotelSettingsError').textContent=''; $('hotelSettingsDialog').showModal(); }; }
 function show(view) {
   document.querySelectorAll('.view').forEach(x => x.hidden = x.id !== view);
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x.dataset.view === view));
@@ -24,7 +26,9 @@ async function boot() {
   try {
     document.querySelectorAll('#panel > nav button').forEach(button => button.setAttribute('aria-label', button.textContent.trim()));
     user = (await api('/me')).user;
-    [rooms, reservations, products] = await Promise.all([api('/rooms'), api('/reservations'), api('/products')]);
+    [rooms, reservations, products, hotelSettings] = await Promise.all([api('/rooms'), api('/reservations'), api('/products'), api('/settings').catch(() => ({hotelName:'Hotelería'}))]);
+    applyHotelName();
+    ensureSettingsControl();
     renderConsumptionTypes();
     $('login').hidden = true; $('panel').hidden = false; $('userInfo').textContent = `${user.email} · ${user.role}`; show('dashboard');
   } catch (error) { $('panel').hidden = true; $('login').hidden = false; $('loginError').textContent = error.message; }
@@ -78,4 +82,5 @@ $('newReservation').onclick=()=>{resetReservation();$('consumptionDate').value=n
 $('cashForm').onsubmit=async e=>{e.preventDefault();try{await api('/cash/movements',{method:'POST',body:JSON.stringify({kind:$('cashKind').value,amount:$('cashAmount').value,method:$('cashMethod').value,description:$('cashDescription').value,movementDate:$('cashDate').value})});e.target.reset();loadCash();}catch(x){flash(x.message,true);}}; $('cashDate').onchange=loadCash; $('closeCash').onclick=()=>{$('cashCloseError').textContent='';$('countedBalance').value='';$('cashCloseDialog').showModal();}; $('cancelCashClose').onclick=()=>$('cashCloseDialog').close(); $('cancelCashCloseBottom').onclick=()=>$('cashCloseDialog').close(); $('cashCloseForm').onsubmit=async e=>{e.preventDefault();$('cashCloseError').textContent='';try{await api('/cash/'+$('cashDate').value+'/close',{method:'POST',body:JSON.stringify({openingBalance:$('cashOpening').value||0,countedBalance:$('countedBalance').value})});$('cashCloseDialog').close();await loadCash();flash('Caja cerrada');}catch(x){$('cashCloseError').textContent=x.message;}};
 $('newRoom').onclick=()=>{$('roomTitle').textContent='Nueva habitación';$('roomForm').reset();$('roomIdEdit').value='';$('roomDialog').showModal();}; $('cancelRoom').onclick=()=>$('roomDialog').close(); $('roomForm').onsubmit=async e=>{e.preventDefault();try{const id=$('roomIdEdit').value;const body={number:$('roomNumber').value,floor:$('roomFloor').value,type:$('roomType').value,capacity:$('roomCapacity').value,basePrice:$('roomPrice').value,status:$('roomStatus').value};await api(id?'/rooms/'+id:'/rooms',{method:id?'PATCH':'POST',body:JSON.stringify(body)});$('roomDialog').close();rooms=await api('/rooms');renderRooms();}catch(x){flash(x.message,true);}};
 $('newProduct').onclick=()=>{$('productTitle').textContent='Nuevo producto';$('productForm').reset();$('productIdEdit').value='';$('productDialog').showModal();}; $('cancelProduct').onclick=()=>$('productDialog').close(); $('productForm').onsubmit=async e=>{e.preventDefault();try{const id=$('productIdEdit').value;const body={name:$('productName').value,category:$('productCategory').value,unit:$('productUnit').value,minimumStock:$('productMinimum').value,cost:$('productCost').value,supplier:$('productSupplier').value};await api(id?'/products/'+id:'/products',{method:id?'PATCH':'POST',body:JSON.stringify(body)});$('productDialog').close();await loadProducts();flash(id?'Producto actualizado':'Producto agregado; ya está disponible en consumos extra');}catch(x){flash(x.message,true);}};
+$('cancelHotelSettings').onclick=()=>$('hotelSettingsDialog').close(); $('cancelHotelSettingsBottom').onclick=()=>$('hotelSettingsDialog').close(); $('hotelSettingsForm').onsubmit=async e=>{e.preventDefault();$('hotelSettingsError').textContent='';try{hotelSettings=await api('/settings',{method:'PATCH',body:JSON.stringify({hotelName:$('hotelNameInput').value})});applyHotelName();$('hotelSettingsDialog').close();flash('Nombre actualizado');}catch(x){$('hotelSettingsError').textContent=x.message;}};
 $('downloadExport').onclick=async()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(await api('/export'),null,2)],{type:'application/json'}));a.download='hotel-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();}; boot(); window.addEventListener('unhandledrejection',e=>{e.preventDefault();flash(e.reason?.message||'No se pudo completar la operación',true);});
