@@ -208,7 +208,8 @@ app.get("/api/me", auth, (req, res) => res.json({ user: req.user }));
 
 // Buffer JSON until commit succeeds: a failed audit or payment cannot leave a partial write.
 const post = app.post.bind(app),
-  patch = app.patch.bind(app);
+  patch = app.patch.bind(app),
+  del = app.delete.bind(app);
 function atomic(handler) {
   return async (req, res, next) => {
     const client = await pool.connect();
@@ -241,6 +242,8 @@ app.post = (route, ...handlers) =>
   post(route, ...handlers.slice(0, -1), atomic(handlers.at(-1)));
 app.patch = (route, ...handlers) =>
   patch(route, ...handlers.slice(0, -1), atomic(handlers.at(-1)));
+app.delete = (route, ...handlers) =>
+  del(route, ...handlers.slice(0, -1), atomic(handlers.at(-1)));
 app.get("/api/rooms", auth, async (_, res) =>
   res.json((await query("SELECT * FROM rooms ORDER BY number")).rows),
 );
@@ -268,6 +271,17 @@ app.post("/api/rooms", auth, allow("reservations"), async (req, res) => {
   } catch (e) {
     throw e;
   }
+});
+app.patch("/api/rooms/:id", auth, allow("reservations"), async (req, res) => {
+  const b = z.object({number:z.string().min(1),floor:z.string().default(""),type:z.string().default("standard"),capacity:z.coerce.number().int().positive(),basePrice:z.coerce.number().nonnegative(),status:z.enum(["available","maintenance","out_of_service"]),notes:z.string().default("")}).parse(req.body);
+  const r=await query("UPDATE rooms SET number=$1,floor=$2,type=$3,capacity=$4,base_price=$5,status=$6,notes=$7 WHERE id=$8 RETURNING *",[b.number,b.floor,b.type,b.capacity,b.basePrice,b.status,b.notes,req.params.id]);
+  if(!r.rows[0]) return res.status(404).json({error:"Habitación inexistente"});
+  await audit(req.user,"update","room",req.params.id,b); res.json(r.rows[0]);
+});
+app.delete("/api/rooms/:id", auth, allow("reservations"), async (req,res) => {
+  const r=await query("UPDATE rooms SET status='out_of_service',notes=CASE WHEN notes='' THEN 'Desactivada' ELSE notes END WHERE id=$1 RETURNING id",[req.params.id]);
+  if(!r.rows[0]) return res.status(404).json({error:"Habitación inexistente"});
+  await audit(req.user,"deactivate","room",req.params.id,{}); res.json({ok:true});
 });
 
 app.get("/api/reservations", auth, async (req, res) => {
@@ -387,6 +401,9 @@ app.post("/api/reservations/:id/consumptions", auth, allow("reservations"), asyn
   const r=await query("INSERT INTO reservation_consumptions(reservation_id,description,amount,consumed_on,charged_on,method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[req.params.id,b.description,b.amount,b.consumedOn,b.chargedOn||null,b.method,req.user.id]);
   if(b.chargedOn) await query("INSERT INTO cash_movements(kind,amount,method,description,movement_date,created_by) VALUES('income',$1,$2,$3,$4,$5)",[b.amount,b.method,`Consumo reserva ${req.params.id}`,b.chargedOn,req.user.id]);
   await audit(req.user,"create","consumption",r.rows[0].id,b); res.status(201).json(r.rows[0]);
+});
+app.get("/api/reservations/:id/consumptions", auth, async (req,res) => {
+  res.json((await query("SELECT * FROM reservation_consumptions WHERE reservation_id=$1 ORDER BY consumed_on,created_at",[req.params.id])).rows);
 });
 app.patch(
   "/api/reservations/:id/status",
@@ -601,6 +618,17 @@ app.post("/api/products", auth, allow("inventory"), async (req, res) => {
   } catch (e) {
     throw e;
   }
+});
+app.patch("/api/products/:id", auth, allow("inventory"), async (req,res) => {
+  const b=z.object({name:z.string().min(2),category:z.string().default("general"),unit:z.string().default("unidad"),minimumStock:z.coerce.number().nonnegative(),cost:z.coerce.number().nonnegative(),supplier:z.string().default("")}).parse(req.body);
+  const r=await query("UPDATE products SET name=$1,category=$2,unit=$3,minimum_stock=$4,cost=$5,supplier=$6 WHERE id=$7 AND active=true RETURNING *",[b.name,b.category,b.unit,b.minimumStock,b.cost,b.supplier,req.params.id]);
+  if(!r.rows[0]) return res.status(404).json({error:"Producto inexistente"});
+  await audit(req.user,"update","product",req.params.id,b); res.json(r.rows[0]);
+});
+app.delete("/api/products/:id", auth, allow("inventory"), async (req,res) => {
+  const r=await query("UPDATE products SET active=false WHERE id=$1 AND active=true RETURNING id",[req.params.id]);
+  if(!r.rows[0]) return res.status(404).json({error:"Producto inexistente"});
+  await audit(req.user,"deactivate","product",req.params.id,{}); res.json({ok:true});
 });
 app.post(
   "/api/products/:id/movements",
