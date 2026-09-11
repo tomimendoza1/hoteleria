@@ -1,0 +1,5 @@
+INSERT INTO rooms(number,floor,type,capacity,base_price) VALUES
+('101','Piso 1','standard',2,0),('102','Piso 1','standard',2,0),('103','Piso 1','standard',2,0),
+('200','Piso 2','standard',2,0),('201','Piso 2','standard',2,0),('202','Piso 2','standard',2,0),('203','Piso 2','standard',2,0),('204','Piso 2','standard',2,0),('205','Piso 2','standard',2,0),('206','Piso 2','standard',2,0),('207','Piso 2','standard',2,0),('208','Piso 2','standard',2,0),('209','Piso 2','standard',2,0),('210','Piso 2','standard',2,0),('211','Piso 2','standard',2,0),('212','Piso 2','standard',2,0),('214','Piso 2','standard',2,0),
+('300','Piso 3','standard',2,0),('301','Piso 3','standard',2,0),('302','Piso 3','standard',2,0),('303','Piso 3','standard',2,0),('304','Piso 3','standard',2,0),('305','Piso 3','standard',2,0),('306','Piso 3','standard',2,0),('307','Piso 3','standard',2,0),('308','Piso 3','standard',2,0),('309','Piso 3','standard',2,0),('310','Piso 3','standard',2,0),('311','Piso 3','standard',2,0),('312','Piso 3','standard',2,0),('314','Piso 3','standard',2,0)
+ON CONFLICT(number) DO NOTHING;

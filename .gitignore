@@ -1,0 +1,12 @@
+node_modules/
+.env*
+!.env.example
+.vercel/
+legacy/
+backups/
+.private/
+*.log
+.DS_Store
+
+.vercel
+!.env.example

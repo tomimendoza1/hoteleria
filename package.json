@@ -1,0 +1,32 @@
+{
+  "name": "hotel-ops",
+  "version": "1.0.0",
+  "private": true,
+  "overrides": {
+    "qs": "^6.16.0"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node src/local.js",
+    "dev": "node --watch src/local.js",
+    "test": "node --test",
+    "create-admin": "node src/create-admin.js",
+    "migrate": "node src/migrate.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

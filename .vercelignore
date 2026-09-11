@@ -1,0 +1,7 @@
+.git
+.env*
+legacy
+backups
+.private
+test
+docker-compose.yml

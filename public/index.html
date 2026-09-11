@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hotel · Gestión</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="login" class="card">
+        <h1>Gestión hotelera</h1>
+        <p>Ingresá con tu usuario.</p>
+        <form id="loginForm">
+          <input id="email" type="email" placeholder="Email" required /><input
+            id="password"
+            type="password"
+            placeholder="Contraseña"
+            required
+          /><button>Ingresar</button>
+          <p id="loginError" class="error"></p>
+        </form>
+      </section>
+      <section id="panel" hidden>
+        <header>
+          <div>
+            <h1>Gestión hotelera</h1>
+            <small id="userInfo"></small>
+          </div>
+          <button id="logout" class="secondary">Salir</button>
+        </header>
+        <nav>
+          <button data-view="dashboard">Inicio</button
+          ><button data-view="reservations">Reservas</button
+          ><button data-view="rooms">Habitaciones</button
+          ><button data-view="cash">Caja</button
+          ><button data-view="stock">Stock</button
+          ><button data-view="export">Exportar</button>
+        </nav>
+        <p id="flash"></p>
+        <section id="dashboard" class="view">
+          <div class="cards">
+            <article>
+              <b id="dashReservations">0</b><span>Reservas</span>
+            </article>
+            <article><b id="dashRooms">0</b><span>Habitaciones</span></article>
+            <article><b id="dashLow">0</b><span>Stock bajo</span></article>
+          </div>
+        </section>
+        <section id="reservations" class="view" hidden>
+          <div class="sectionHead">
+            <h2>Reservas</h2>
+            <button id="newReservation">Nueva reserva</button>
+          </div>
+          <div id="reservationList"></div>
+          <dialog id="reservationDialog">
+            <form id="reservationForm" method="dialog">
+              <h2>Nueva reserva</h2>
+              <select id="roomId" required></select
+              ><input
+                id="guestName"
+                placeholder="Nombre y apellido"
+                required
+              /><input id="guestDocument" placeholder="Documento" /><input
+                id="guestPhone"
+                placeholder="Teléfono"
+              />
+              <div class="grid">
+                <input id="checkin" type="date" required /><input
+                  id="checkout"
+                  type="date"
+                  required
+                />
+              </div>
+              <div class="grid">
+                <input
+                  id="adults"
+                  type="number"
+                  min="1"
+                  value="1"
+                  required
+                /><input id="children" type="number" min="0" value="0" />
+              </div>
+              <input
+                id="pricePerNight"
+                type="number"
+                min="0"
+                placeholder="Precio por noche"
+                required
+              /><input
+                id="deposit"
+                type="number"
+                min="0"
+                value="0"
+                placeholder="Seña"
+              /><select id="status">
+                <option value="pending">Pendiente</option>
+                <option value="confirmed">Confirmada</option></select
+              ><textarea id="notes" placeholder="Notas"></textarea>
+              <p class="error" id="reservationError"></p>
+              <button type="submit">Guardar</button
+              ><button type="button" class="secondary" id="cancelReservation">
+                Cancelar
+              </button>
+            </form>
+          </dialog>
+        </section>
+        <section id="rooms" class="view" hidden>
+          <div class="sectionHead">
+            <h2>Habitaciones</h2>
+            <button id="newRoom">Agregar habitación</button>
+          </div>
+          <div id="roomList"></div>
+          <dialog id="roomDialog">
+            <form id="roomForm" method="dialog">
+              <h2>Nueva habitación</h2>
+              <input id="roomNumber" placeholder="Número" required /><input
+                id="roomFloor"
+                placeholder="Piso"
+              /><input id="roomType" placeholder="Tipo" /><input
+                id="roomCapacity"
+                type="number"
+                min="1"
+                value="2"
+                required
+              /><input
+                id="roomPrice"
+                type="number"
+                min="0"
+                placeholder="Precio base"
+                required
+              /><button>Guardar</button
+              ><button type="button" class="secondary" id="cancelRoom">
+                Cancelar
+              </button>
+            </form>
+          </dialog>
+        </section>
+        <section id="cash" class="view" hidden>
+          <h2>Caja</h2>
+          <div class="grid">
+            <input id="cashDate" type="date" /><input
+              id="cashOpening"
+              type="number"
+              min="0"
+              placeholder="Saldo inicial"
+            />
+          </div>
+          <form id="cashForm" class="card">
+            <select id="cashKind">
+              <option value="income">Ingreso</option>
+              <option value="expense">Egreso</option>
+              <option value="withdrawal">Retiro</option>
+              <option value="adjustment">Ajuste</option></select
+            ><input
+              id="cashAmount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="Monto"
+              required
+            /><select id="cashMethod">
+              <option value="cash">Efectivo</option>
+              <option value="transfer">Transferencia</option>
+              <option value="debit">Débito</option>
+              <option value="credit">Crédito</option>
+              <option value="other">Otro</option></select
+            ><input
+              id="cashDescription"
+              placeholder="Descripción"
+              required
+            /><button>Registrar movimiento</button>
+          </form>
+          <div id="cashSummary"></div>
+          <button id="closeCash">Cerrar caja</button>
+        </section>
+        <section id="stock" class="view" hidden>
+          <div class="sectionHead">
+            <h2>Stock</h2>
+            <button id="newProduct">Nuevo producto</button>
+          </div>
+          <div id="productList"></div>
+          <dialog id="productDialog">
+            <form id="productForm" method="dialog">
+              <h2>Nuevo producto</h2>
+              <input id="productName" placeholder="Producto" required /><input
+                id="productCategory"
+                placeholder="Categoría"
+              /><input
+                id="productUnit"
+                placeholder="Unidad"
+                value="unidad"
+              /><input
+                id="productMinimum"
+                type="number"
+                min="0"
+                value="0"
+                placeholder="Stock mínimo"
+              /><input
+                id="productCost"
+                type="number"
+                min="0"
+                value="0"
+                placeholder="Costo"
+              /><input id="productSupplier" placeholder="Proveedor" /><button>
+                Guardar</button
+              ><button type="button" class="secondary" id="cancelProduct">
+                Cancelar
+              </button>
+            </form>
+          </dialog>
+        </section>
+        <section id="export" class="view" hidden>
+          <h2>Exportación y migración</h2>
+          <p>Descargá todos los datos en JSON para respaldo.</p>
+          <button id="downloadExport">Descargar respaldo</button>
+          <h3>Importar CSV legado</h3>
+          <input id="csvFile" type="file" accept=".csv" /><button
+            id="previewCsv"
+          >
+            Validar CSV
+          </button>
+          <p id="importResult"></p>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
