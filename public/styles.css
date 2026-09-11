@@ -140,7 +140,7 @@ small { color: var(--muted); }
   padding: 3px 11px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, .12);
   color: #fff;
-  content: "H";
+  content: "";
   font-size: 17px;
   font-weight: 850;
   letter-spacing: -.03em;
@@ -217,7 +217,7 @@ small { color: var(--muted); }
 
   #panel:has(> nav:hover) > nav::before,
   #panel:has(> nav:focus-within) > nav::before {
-    content: "H  " attr(data-hotel-name);
+    content: attr(data-hotel-name);
     text-align: left;
   }
 
