@@ -22,6 +22,7 @@ function show(view) {
 }
 async function boot() {
   try {
+    document.querySelectorAll('#panel > nav button').forEach(button => button.setAttribute('aria-label', button.textContent.trim()));
     user = (await api('/me')).user;
     [rooms, reservations, products] = await Promise.all([api('/rooms'), api('/reservations'), api('/products')]);
     renderConsumptionTypes();
