@@ -29,7 +29,8 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 24px;
-  --sidebar-width: 218px;
+  --sidebar-width: 68px;
+  --sidebar-expanded-width: 218px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -89,6 +90,9 @@ small { color: var(--muted); }
 #panel > nav,
 #panel > #flash,
 #panel > .view { margin-left: var(--sidebar-width); }
+#panel > header,
+#panel > #flash,
+#panel > .view { transition: margin-left .22s ease; }
 #panel > header {
   display: flex;
   min-height: 94px;
@@ -129,16 +133,18 @@ small { color: var(--muted); }
   border-radius: 0;
   background: linear-gradient(175deg, #123b3e 0%, #0c2d31 100%);
   box-shadow: 10px 0 30px rgba(20, 45, 49, .08);
+  transition: width .22s ease;
 }
 #panel > nav::before {
   display: block;
   padding: 3px 11px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, .12);
   color: #fff;
-  content: "H  " attr(data-hotel-name);
+  content: "H";
   font-size: 17px;
   font-weight: 850;
   letter-spacing: -.03em;
+  text-align: center;
 }
 #panel > nav::after {
   margin-top: auto;
@@ -149,19 +155,21 @@ small { color: var(--muted); }
   font-size: 11px;
   letter-spacing: .08em;
   text-transform: uppercase;
+  opacity: 0;
+  transition: opacity .16s ease;
 }
 #panel > nav button {
   display: flex;
   min-height: 38px;
   align-items: center;
   justify-content: flex-start;
-  gap: 9px;
+  gap: 0;
   padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 11px;
   background: transparent;
   color: rgba(255, 255, 255, .68);
-  font-size: 13px;
+  font-size: 0;
   font-weight: 750;
   text-align: left;
   transition: background .18s ease, color .18s ease, transform .18s ease;
@@ -194,6 +202,37 @@ small { color: var(--muted); }
 #panel > nav button[data-view="stock"]::before { content: "▤"; }
 #panel > nav button[data-view="stats"]::before { content: "▥"; }
 #panel > nav button[data-view="export"]::before { content: "↓"; }
+
+/* Desktop navigation behaves like a compact icon rail and expands on hover/focus. */
+@media (min-width: 721px) {
+  #panel:has(> nav:hover),
+  #panel:has(> nav:focus-within) {
+    --sidebar-width: var(--sidebar-expanded-width);
+  }
+
+  #panel:has(> nav:hover) > nav,
+  #panel:has(> nav:focus-within) > nav {
+    padding-inline: 10px;
+  }
+
+  #panel:has(> nav:hover) > nav::before,
+  #panel:has(> nav:focus-within) > nav::before {
+    content: "H  " attr(data-hotel-name);
+    text-align: left;
+  }
+
+  #panel:has(> nav:hover) > nav::after,
+  #panel:has(> nav:focus-within) > nav::after {
+    opacity: 1;
+  }
+
+  #panel:has(> nav:hover) > nav button,
+  #panel:has(> nav:focus-within) > nav button {
+    gap: 9px;
+    justify-content: flex-start;
+    font-size: 13px;
+  }
+}
 #panel > #flash {
   min-height: 24px;
   margin-top: 0;
@@ -335,7 +374,7 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
 #flash:empty { min-height: 0; padding-top: 0; }
 
 @media (max-width: 1120px) {
-  :root { --sidebar-width: 204px; }
+  :root { --sidebar-width: 64px; --sidebar-expanded-width: 204px; }
   .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard-grid { grid-template-columns: 1fr; }
 }
