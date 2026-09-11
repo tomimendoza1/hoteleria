@@ -19,6 +19,7 @@ async function boot() {
   try {
     user = (await api('/me')).user;
     [rooms, reservations, products] = await Promise.all([api('/rooms'), api('/reservations'), api('/products')]);
+    renderConsumptionTypes();
     $('login').hidden = true; $('panel').hidden = false; $('userInfo').textContent = `${user.email} · ${user.role}`; show('dashboard');
   } catch (error) { $('panel').hidden = true; $('login').hidden = false; $('loginError').textContent = error.message; }
 }
