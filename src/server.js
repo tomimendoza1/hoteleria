@@ -160,9 +160,34 @@ const reservationSchema = z.object({
   notes: z.string().optional().default(""),
   invoice: z.coerce.boolean().default(false),
   paymentMethod: z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]).default("other"),
+  paid: z.coerce.boolean().default(false),
 });
 function dateOnly(d) {
   return d.toISOString().slice(0, 10);
+}
+const paymentMethodSchema = z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]);
+async function reservationBalance(id, db = query) {
+  const r = await db(`SELECT r.id,r.total_price lodging_total,
+    COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0) lodging_paid_rows,
+    CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END legacy_deposit,
+    COALESCE((SELECT sum(c.amount) FROM reservation_consumptions c WHERE c.reservation_id=r.id),0) consumption_total,
+    COALESCE((SELECT sum(CASE WHEN p.id IS NOT NULL THEN p.amount WHEN c.charged_on IS NOT NULL THEN c.amount ELSE 0 END) FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=r.id),0) consumption_paid
+    FROM reservations r WHERE r.id=$1`, [id]);
+  if (!r.rows[0]) return null;
+  const x=r.rows[0]; const lodgingPaid=Number(x.lodging_paid_rows)+Number(x.legacy_deposit); const consumptionTotal=Number(x.consumption_total); const consumptionPaid=Number(x.consumption_paid);
+  return {reservationId:x.id,lodgingTotal:Number(x.lodging_total),lodgingPaid,lodgingPending:Math.max(0,Number(x.lodging_total)-lodgingPaid),consumptionTotal,consumptionPaid,consumptionPending:Math.max(0,consumptionTotal-consumptionPaid),total:Math.max(0,Number(x.lodging_total)+consumptionTotal-lodgingPaid-consumptionPaid)};
+}
+async function ensureCashOpen(db, day) {
+  const run=typeof db==='function'?db:(text,params)=>db.query(text,params);
+  if ((await run("SELECT 1 FROM cash_closures WHERE closure_date=$1 AND closed_at IS NOT NULL",[day])).rowCount) { const error=new Error("La caja está cerrada"); error.status=409; throw error; }
+}
+async function insertPayment(db, {reservationId, amount, method, category, consumptionId=null, userId, notes='', movementDate=null}) {
+  const run=typeof db==='function'?db:(text,params)=>db.query(text,params);
+  const day=movementDate || (await run("SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day")).rows[0].day;
+  await ensureCashOpen(db,day);
+  const p=await run("INSERT INTO payments(reservation_id,amount,method,category,consumption_id,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[reservationId,amount,method,category,consumptionId,notes,userId]);
+  await run("INSERT INTO cash_movements(kind,amount,method,description,created_by,movement_date) VALUES('income',$1,$2,$3,$4,$5)",[amount,method,category==='consumption'?`Consumo de reserva ${reservationId}`:`Pago de reserva ${reservationId}`,userId,day]);
+  return p.rows[0];
 }
 
 app.post("/api/auth/login", async (req, res) => {
@@ -286,10 +311,14 @@ app.delete("/api/rooms/:id", auth, allow("reservations"), async (req,res) => {
 
 app.get("/api/reservations", auth, async (req, res) => {
   const { rows } = await query(
-    `SELECT r.*, g.name guest_name,g.document,g.phone,g.address, rm.number room_number FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE ($1='' OR r.status=$1) ORDER BY r.checkin`,
+    `SELECT r.*, g.name guest_name,g.document,g.phone,g.address, rm.number room_number,
+      COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid,
+      COALESCE((SELECT sum(c.amount) FROM reservation_consumptions c WHERE c.reservation_id=r.id),0) AS consumption_total,
+      COALESCE((SELECT sum(CASE WHEN p.id IS NOT NULL THEN p.amount WHEN c.charged_on IS NOT NULL THEN c.amount ELSE 0 END) FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=r.id),0) AS consumption_paid
+      FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE ($1='' OR r.status=$1) ORDER BY r.checkin`,
     [req.query.status || ""],
   );
-  res.json(rows);
+  res.json(rows.map(r => ({...r, lodging_pending:Math.max(0,Number(r.total_price)-Number(r.lodging_paid)), consumption_pending:Math.max(0,Number(r.consumption_total)-Number(r.consumption_paid)), total_pending:Math.max(0,Number(r.total_price)+Number(r.consumption_total)-Number(r.lodging_paid)-Number(r.consumption_paid))})));
 });
 app.get("/api/dashboard", auth, async (_, res) => {
   const d = await query(`SELECT
@@ -302,9 +331,22 @@ app.get("/api/dashboard", auth, async (_, res) => {
     FROM reservations`).then(x => x.rows[0]);
   const [today, alerts] = await Promise.all([
     query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.checkout,r.status,r.adults,r.children FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.status='checked_in' OR r.checkin=CURRENT_DATE OR r.checkout=CURRENT_DATE ORDER BY r.checkin`),
-    query(`SELECT r.id,g.name guest_name,r.total_price-COALESCE((SELECT sum(amount) FROM payments p WHERE p.reservation_id=r.id),0) balance,r.checkin FROM reservations r JOIN guests g ON g.id=r.guest_id WHERE r.status NOT IN ('cancelled','no_show','checked_out') AND r.total_price>COALESCE((SELECT sum(amount) FROM payments p WHERE p.reservation_id=r.id),0) ORDER BY r.checkin LIMIT 20`)
+    query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.total_price,
+      COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid,
+      COALESCE((SELECT sum(c.amount) FROM reservation_consumptions c WHERE c.reservation_id=r.id),0) AS consumption_total,
+      COALESCE((SELECT sum(CASE WHEN p.id IS NOT NULL THEN p.amount WHEN c.charged_on IS NOT NULL THEN c.amount ELSE 0 END) FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=r.id),0) AS consumption_paid
+      FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.status NOT IN ('cancelled','no_show','checked_out') ORDER BY r.checkin LIMIT 50`)
   ]);
-  res.json({ metrics:d, today:today.rows, pendingPayments:alerts.rows });
+  res.json({ metrics:d, today:today.rows, pendingPayments:alerts.rows.map(x => ({...x,lodging_pending:Math.max(0,Number(x.total_price||0)-Number(x.lodging_paid)),consumption_pending:Math.max(0,Number(x.consumption_total)-Number(x.consumption_paid)),balance:Math.max(0,Number(x.total_price||0)+Number(x.consumption_total)-Number(x.lodging_paid)-Number(x.consumption_paid))})).filter(x => x.balance > 0) });
+});
+app.get("/api/reservations/:id/balance", auth, async (req,res) => {
+  const balance=await reservationBalance(req.params.id);
+  if(!balance) return res.status(404).json({error:"Reserva inexistente"});
+  res.json(balance);
+});
+app.get("/api/reservations/:id/payments", auth, async (req,res) => {
+  if(!(await query("SELECT 1 FROM reservations WHERE id=$1",[req.params.id])).rowCount) return res.status(404).json({error:"Reserva inexistente"});
+  res.json((await query("SELECT * FROM payments WHERE reservation_id=$1 ORDER BY paid_at",[req.params.id])).rows);
 });
 app.get("/api/calendar", auth, async (req, res) => {
   const from = req.query.from || dateOnly(new Date());
@@ -374,6 +416,12 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
       ],
     );
     await audit(req.user, "create", "reservation", r.rows[0].id, b);
+    const initialPayment = b.deposit > 0 ? Number(b.deposit) : (b.paid ? Number(r.rows[0].total_price) : 0);
+    if (initialPayment > Number(r.rows[0].total_price)) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
+    if (initialPayment > 0) {
+      const payment = await insertPayment(client, {reservationId:r.rows[0].id, amount:initialPayment, method:b.paymentMethod, category:"lodging", userId:req.user.id, notes:"Pago inicial de alojamiento"});
+      await audit(req.user, "create", "payment", payment.id, {reservationId:r.rows[0].id, amount:initialPayment, category:"lodging"});
+    }
     res.status(201).json(r.rows[0]);
   } catch (e) {
     throw e;
@@ -392,18 +440,44 @@ app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res)
   if (!room) return res.status(400).json({error:"Habitación inexistente"});
   if (room.status !== 'available') return res.status(400).json({error:"La habitación no está disponible"});
   if (b.adults+b.children > room.capacity) return res.status(400).json({error:"La cantidad de huéspedes supera la capacidad"});
+  const newTotal=Number(b.pricePerNight)*nights;
+  const current=await reservationBalance(req.params.id);
+  const paymentRows=await query("SELECT count(*)::int count FROM payments WHERE reservation_id=$1 AND category='lodging'",[req.params.id]);
+  const currentPaid=current.lodgingPaid;
+  const targetPaid=b.deposit>0?Number(b.deposit):(b.paid?newTotal:currentPaid);
+  if(targetPaid>newTotal) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
+  if(targetPaid<currentPaid) return res.status(409).json({error:"No se puede reducir un importe ya pagado; registrá una corrección contable"});
   const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=$8*$9,deposit=$10,due_date=$11,notes=$12,invoice=$13,payment_method=$14,updated_at=now() WHERE id=$15 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
+  if(targetPaid>currentPaid){
+    const amount=Number(paymentRows.rows[0].count)===0 && currentPaid>0?targetPaid:targetPaid-currentPaid;
+    const payment=await insertPayment(transactions.getStore(),{reservationId:req.params.id,amount,method:b.paymentMethod,category:"lodging",userId:req.user.id,notes:"Pago adicional de alojamiento"});
+    await audit(req.user,"create","payment",payment.id,{reservationId:req.params.id,amount,category:"lodging"});
+  }
   await audit(req.user,"update","reservation",req.params.id,b); res.json(r.rows[0]);
 });
 app.post("/api/reservations/:id/consumptions", auth, allow("reservations"), async (req,res) => {
-  const b=z.object({description:z.string().min(2),amount:z.coerce.number().positive(),consumedOn:z.string(),chargedOn:z.string().nullable().optional(),method:z.enum(["cash","transfer","debit","credit","booking","other"]).default("other")}).parse(req.body);
-  if (!(await query("SELECT 1 FROM reservations WHERE id=$1",[req.params.id])).rowCount) return res.status(404).json({error:"Reserva inexistente"});
-  const r=await query("INSERT INTO reservation_consumptions(reservation_id,description,amount,consumed_on,charged_on,method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[req.params.id,b.description,b.amount,b.consumedOn,b.chargedOn||null,b.method,req.user.id]);
-  if(b.chargedOn) await query("INSERT INTO cash_movements(kind,amount,method,description,movement_date,created_by) VALUES('income',$1,$2,$3,$4,$5)",[b.amount,b.method,`Consumo reserva ${req.params.id}`,b.chargedOn,req.user.id]);
+  const client=transactions.getStore();
+  const b=z.object({description:z.string().min(2),amount:z.coerce.number().positive(),consumedOn:z.string(),chargedOn:z.string().nullable().optional(),method:paymentMethodSchema.default("other")}).parse(req.body);
+  if (!(await client.query("SELECT 1 FROM reservations WHERE id=$1",[req.params.id])).rowCount) return res.status(404).json({error:"Reserva inexistente"});
+  const r=await client.query("INSERT INTO reservation_consumptions(reservation_id,description,amount,consumed_on,charged_on,method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[req.params.id,b.description,b.amount,b.consumedOn,b.chargedOn||null,b.method,req.user.id]);
+  if(b.chargedOn){
+    const payment=await insertPayment(client,{reservationId:req.params.id,amount:b.amount,method:b.method,category:"consumption",consumptionId:r.rows[0].id,userId:req.user.id,notes:`Pago de consumo: ${b.description}`,movementDate:b.chargedOn});
+    await client.query("UPDATE reservation_consumptions SET payment_id=$1 WHERE id=$2",[payment.id,r.rows[0].id]);
+  }
   await audit(req.user,"create","consumption",r.rows[0].id,b); res.status(201).json(r.rows[0]);
 });
 app.get("/api/reservations/:id/consumptions", auth, async (req,res) => {
-  res.json((await query("SELECT * FROM reservation_consumptions WHERE reservation_id=$1 ORDER BY consumed_on,created_at",[req.params.id])).rows);
+  res.json((await query("SELECT c.*,p.id paid_payment_id,p.paid_at,p.method paid_method FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=$1 ORDER BY c.consumed_on,c.created_at",[req.params.id])).rows);
+});
+app.patch("/api/consumptions/:id/pay", auth, allow("cash"), async (req,res) => {
+  const client=transactions.getStore();
+  const b=z.object({paidOn:z.string(),method:paymentMethodSchema}).parse(req.body);
+  const c=(await client.query("SELECT * FROM reservation_consumptions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
+  if(!c) return res.status(404).json({error:"Consumo inexistente"});
+  if(c.payment_id || (await client.query("SELECT 1 FROM payments WHERE consumption_id=$1",[c.id])).rowCount) return res.status(409).json({error:"El consumo ya está pagado"});
+  const payment=await insertPayment(client,{reservationId:c.reservation_id,amount:Number(c.amount),method:b.method,category:"consumption",consumptionId:c.id,userId:req.user.id,notes:`Pago de consumo: ${c.description}`,movementDate:b.paidOn});
+  await client.query("UPDATE reservation_consumptions SET payment_id=$1,charged_on=$2 WHERE id=$3",[payment.id,b.paidOn,c.id]);
+  await audit(req.user,"pay","consumption",c.id,{amount:c.amount,paidOn:b.paidOn,method:b.method}); res.json({consumptionId:c.id,payment});
 });
 app.patch(
   "/api/reservations/:id/status",
@@ -463,6 +537,8 @@ app.post(
         ).rowCount
       )
         return res.status(404).json({ error: "Reserva inexistente" });
+      const balance=await reservationBalance(req.params.id);
+      if (b.amount > balance.lodgingPending) return res.status(400).json({error:"El pago supera el saldo pendiente del alojamiento"});
       const day = (
         await query(
           "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
@@ -478,7 +554,7 @@ app.post(
       )
         return res.status(409).json({ error: "La caja está cerrada" });
       const r = await query(
-        "INSERT INTO payments(reservation_id,amount,method,notes,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *",
+        "INSERT INTO payments(reservation_id,amount,method,category,notes,created_by) VALUES($1,$2,$3,'lodging',$4,$5) RETURNING *",
         [req.params.id, b.amount, b.method, b.notes, req.user.id],
       );
       await query(
@@ -813,6 +889,7 @@ app.use((err, req, res, next) => {
     return res
       .status(409)
       .json({ error: "La habitación ya está reservada en esas fechas" });
+  if (err.status) return res.status(err.status).json({error:err.message});
   if (["23503", "23505", "23514", "22P02", "22007", "22008"].includes(err.code))
     return res
       .status(400)
@@ -823,6 +900,10 @@ app.use((err, req, res, next) => {
     "La cantidad de huéspedes supera la capacidad",
     "Producto inexistente",
     "El movimiento dejaría stock negativo",
+    "El pago no puede superar el total del alojamiento",
+    "El pago supera el saldo pendiente del alojamiento",
+    "No se puede reducir un importe ya pagado; registrá una corrección contable",
+    "Consumo inexistente",
   ];
   if (known.includes(err.message))
     return res.status(400).json({ error: err.message });
