@@ -117,6 +117,89 @@ test(
           "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
         )
       ).rows[0].day;
+      const todayClosure = (await call("/cash/" + day)).data.closure;
+      if (!todayClosure?.closed_at) {
+        const paid = await call(
+          "/reservations/" + reservation.id + "/payments",
+          "POST",
+          { amount: 25, method: "cash" },
+        );
+        assert.equal(paid.status, 201);
+        assert.equal(
+          Number(
+            (
+              await pool.query(
+                "SELECT sum(amount) AS total FROM payments WHERE reservation_id=$1",
+                [reservation.id],
+              )
+            ).rows[0].total,
+          ),
+          25,
+        );
+        const matching = await pool.query(
+          "SELECT * FROM cash_movements WHERE description=$1",
+          ["Pago de reserva " + reservation.id],
+        );
+        assert.equal(matching.rows.length, 1);
+        // Failure after the payment insert must roll back payment and cash rows.
+        await pool.query(
+          "CREATE OR REPLACE FUNCTION test_reject_payment_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.entity='payment' THEN RAISE EXCEPTION 'test audit failure'; END IF; RETURN NEW; END $$",
+        );
+        await pool.query(
+          "CREATE TRIGGER test_payment_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION test_reject_payment_audit()",
+        );
+        try {
+          assert.equal(
+            (
+              await call(
+                "/reservations/" + reservation.id + "/payments",
+                "POST",
+                { amount: 9, method: "cash" },
+              )
+            ).status,
+            503,
+          );
+          assert.equal(
+            (
+              await pool.query(
+                "SELECT * FROM payments WHERE reservation_id=$1",
+                [reservation.id],
+              )
+            ).rowCount,
+            1,
+          );
+          assert.equal(
+            (
+              await pool.query(
+                "SELECT * FROM cash_movements WHERE description=$1",
+                ["Pago de reserva " + reservation.id],
+              )
+            ).rowCount,
+            1,
+          );
+        } finally {
+          await pool.query("DROP TRIGGER test_payment_audit ON audit_log");
+          await pool.query("DROP FUNCTION test_reject_payment_audit()");
+        }
+        assert.equal(
+          (
+            await call("/cash/" + day + "/close", "POST", {
+              openingBalance: 0,
+              countedBalance: 25,
+            })
+          ).status,
+          200,
+        );
+      }
+      assert.equal(
+        (
+          await call("/reservations/" + reservation.id + "/payments", "POST", {
+            amount: 5,
+            method: "cash",
+          })
+        ).status,
+        409,
+      );
       // A dedicated test cash date avoids modifying production or re-opening historical cash.
       const date = "2032-02-01";
       const existing = (await call("/cash/" + date)).data.closure;
@@ -198,6 +281,31 @@ test(
         ),
         2,
       );
+      const adminId = login.data.user.id;
+      try {
+        await pool.query("UPDATE users SET role='readonly' WHERE id=$1", [
+          adminId,
+        ]);
+        assert.equal(
+          (
+            await call("/rooms", "POST", {
+              number: "forbidden",
+              capacity: 1,
+              basePrice: 0,
+            })
+          ).status,
+          403,
+        );
+        await pool.query("UPDATE users SET active=false WHERE id=$1", [
+          adminId,
+        ]);
+        assert.equal((await call("/me")).status, 401);
+      } finally {
+        await pool.query(
+          "UPDATE users SET role='admin',active=true WHERE id=$1",
+          [adminId],
+        );
+      }
       assert.equal((await call("/auth/logout", "POST", {})).status, 200);
       cookie = "";
       assert.equal((await call("/me")).status, 401);

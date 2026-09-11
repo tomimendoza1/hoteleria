@@ -1,35 +1,53 @@
-import {chromium} from '@playwright/test';
-import assert from 'node:assert/strict';
-const base=process.env.SMOKE_URL;
-if(!base) throw new Error('Configure SMOKE_URL');
-const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+import { chromium } from "@playwright/test";
+import assert from "node:assert/strict";
+const base = process.env.SMOKE_URL;
+if (!base) throw new Error("Configure SMOKE_URL");
+const browser = await chromium.launch({
+  executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  headless: true,
+});
 try {
-  const context=await browser.newContext();
-  const page=await context.newPage();
-  const errors=[];
-  page.on('pageerror',e=>errors.push(e.message));
+  const context = await browser.newContext({
+    extraHTTPHeaders: process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      ? {
+          "x-vercel-protection-bypass":
+            process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+        }
+      : {},
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(base);
-  await page.locator('#email').fill(process.env.ADMIN_EMAIL);
-  await page.locator('#password').fill(process.env.ADMIN_PASSWORD);
-  await page.locator('#loginForm button').click();
-  await page.locator('#panel').waitFor({state:'visible',timeout:30000});
-  await page.getByRole('button',{name:'Habitaciones',exact:true}).click();
-  await page.locator('#roomList .row').first().waitFor();
-  assert.ok(await page.locator('#roomList .row').count()>=31);
-  await page.getByRole('button',{name:'Reservas',exact:true}).click();
-  await page.locator('#reservations').waitFor({state:'visible'});
-  await page.getByRole('button',{name:'Stock',exact:true}).click();
-  await page.locator('#stock').waitFor({state:'visible'});
+  await page.locator("#email").fill(process.env.ADMIN_EMAIL);
+  await page.locator("#password").fill(process.env.ADMIN_PASSWORD);
+  await page.locator("#loginForm button").click();
+  await page.locator("#panel").waitFor({ state: "visible", timeout: 30000 });
+  await page.getByRole("button", { name: "Habitaciones", exact: true }).click();
+  await page.locator("#roomList .row").first().waitFor();
+  assert.ok((await page.locator("#roomList .row").count()) >= 31);
+  await page.getByRole("button", { name: "Reservas", exact: true }).click();
+  await page.locator("#reservations").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Stock", exact: true }).click();
+  await page.locator("#stock").waitFor({ state: "visible" });
   await page.reload();
-  await page.locator('#panel').waitFor({state:'visible',timeout:30000});
-  const cookies=await context.cookies();
-  const session=cookies.find(c=>c.name==='hotel_session');
-  assert.ok(session.httpOnly);assert.ok(session.secure);
-  assert.equal(session.sameSite,'Lax');
-  await page.screenshot({path:'.private/dashboard.png',fullPage:true});
-  await page.getByRole('button',{name:'Salir',exact:true}).click();
-  await page.locator('#login').waitFor({state:'visible'});
-  assert.equal((await context.cookies()).some(c=>c.name==='hotel_session'),false);
-  assert.deepEqual(errors,[]);
-  console.log('BROWSER PASS: login, rooms, reservations, stock, reload, secure cookie, logout');
-}finally{await browser.close();}
+  await page.locator("#panel").waitFor({ state: "visible", timeout: 30000 });
+  const cookies = await context.cookies();
+  const session = cookies.find((c) => c.name === "hotel_session");
+  assert.ok(session.httpOnly);
+  assert.ok(session.secure);
+  assert.equal(session.sameSite, "Lax");
+  await page.screenshot({ path: ".private/dashboard.png", fullPage: true });
+  await page.getByRole("button", { name: "Salir", exact: true }).click();
+  await page.locator("#login").waitFor({ state: "visible" });
+  assert.equal(
+    (await context.cookies()).some((c) => c.name === "hotel_session"),
+    false,
+  );
+  assert.deepEqual(errors, []);
+  console.log(
+    "BROWSER PASS: login, rooms, reservations, stock, reload, secure cookie, logout",
+  );
+} finally {
+  await browser.close();
+}
