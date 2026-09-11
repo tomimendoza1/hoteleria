@@ -447,7 +447,7 @@ app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res)
   const targetPaid=b.deposit>0?Number(b.deposit):(b.paid?newTotal:currentPaid);
   if(targetPaid>newTotal) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
   if(targetPaid<currentPaid) return res.status(409).json({error:"No se puede reducir un importe ya pagado; registrá una corrección contable"});
-  const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=$8*$9,deposit=$10,due_date=$11,notes=$12,invoice=$13,payment_method=$14,updated_at=now() WHERE id=$15 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
+  const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=($8::numeric*$9::integer),deposit=$10,due_date=$11,notes=$12,invoice=$13,payment_method=$14,updated_at=now() WHERE id=$15 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
   if(targetPaid>currentPaid){
     const amount=Number(paymentRows.rows[0].count)===0 && currentPaid>0?targetPaid:targetPaid-currentPaid;
     const payment=await insertPayment(transactions.getStore(),{reservationId:req.params.id,amount,method:b.paymentMethod,category:"lodging",userId:req.user.id,notes:"Pago adicional de alojamiento"});
