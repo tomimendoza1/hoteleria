@@ -376,6 +376,7 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
 /* Modern date picker with quick ranges and a monthly grid. */
 .date-picker-popover {
   position: fixed;
+  inset: auto;
   z-index: 100;
   display: grid;
   grid-template-columns: 142px minmax(270px, 1fr);
@@ -387,6 +388,7 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   color: #f8f5ef;
   box-shadow: 0 22px 60px rgba(8, 29, 32, .3);
 }
+.date-picker-popover:popover-open { display: grid; margin: 0; }
 .date-picker-popover[hidden] { display: none; }
 .date-presets { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 17px 12px; border-right: 1px solid rgba(255, 255, 255, .12); }
 .date-presets p { margin: 0 7px 8px; color: rgba(248, 245, 239, .54); font-size: 10px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
