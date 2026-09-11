@@ -4,6 +4,7 @@ node_modules/
 .vercel/
 legacy/
 backups/
+docker-compose.yml
 .private/
 *.log
 .DS_Store

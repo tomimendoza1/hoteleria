@@ -165,11 +165,9 @@ function dateOnly(d) {
 
 app.post("/api/auth/login", async (req, res) => {
   if (!jwtSecret || jwtSecret.length < 32 || !process.env.DATABASE_URL)
-    return res
-      .status(503)
-      .json({
-        error: "El servicio necesita configuración. Contactá al administrador.",
-      });
+    return res.status(503).json({
+      error: "El servicio necesita configuración. Contactá al administrador.",
+    });
   const body = z
     .object({
       email: z.string().trim().email(),
@@ -387,6 +385,12 @@ app.post(
           notes: z.string().default(""),
         })
         .parse(req.body);
+      if (
+        !(
+          await query("SELECT 1 FROM reservations WHERE id=$1", [req.params.id])
+        ).rowCount
+      )
+        return res.status(404).json({ error: "Reserva inexistente" });
       const day = (
         await query(
           "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
@@ -718,12 +722,10 @@ app.use((err, req, res, next) => {
   console.error("Request failed:", err.code || err.name);
   if (res.headersSent) return next(err);
   if (err instanceof z.ZodError)
-    return res
-      .status(400)
-      .json({
-        error: "Datos inválidos",
-        fields: err.issues.map((x) => x.path.join(".")),
-      });
+    return res.status(400).json({
+      error: "Datos inválidos",
+      fields: err.issues.map((x) => x.path.join(".")),
+    });
   if (err.code === "23P01")
     return res
       .status(409)

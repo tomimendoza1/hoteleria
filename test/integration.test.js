@@ -104,7 +104,7 @@ test(
             method: "cash",
           })
         ).status,
-        400,
+        404,
       );
       assert.equal(
         Number(
