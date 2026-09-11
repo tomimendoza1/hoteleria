@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2});
+const statusClass = (s) => `status-${String(s ?? 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), formConsumptions = [], pendingPaymentConsumptionId = null;
 
 async function api(url, options = {}) {
@@ -13,7 +14,11 @@ function flash(message, bad = false) { $('flash').textContent = message; $('flas
 function show(view) {
   document.querySelectorAll('.view').forEach(x => x.hidden = x.id !== view);
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x.dataset.view === view));
-  ({dashboard, reservations:loadReservations, calendar:loadCalendar, guests:loadGuests, rooms:renderRooms, cash:loadCash, stock:loadProducts, stats:loadStats}[view])();
+  const meta={dashboard:['Resumen','Inicio'],reservations:['Operación','Reservas'],calendar:['Disponibilidad','Calendario'],guests:['Relaciones','Clientes'],rooms:['Configuración','Habitaciones'],cash:['Finanzas','Caja'],stock:['Inventario','Stock'],stats:['Reportes','Estadísticas'],export:['Seguridad','Respaldo']};
+  const [eyebrow,title]=meta[view] || ['Panel operativo','Hotelería']; const heading=document.querySelector('#panel header h1'); const context=document.querySelector('#panel header .eyebrow');
+  if(heading)heading.textContent=title; if(context)context.textContent=eyebrow;
+  const loaders={dashboard,reservations:loadReservations,calendar:loadCalendar,guests:loadGuests,rooms:renderRooms,cash:loadCash,stock:loadProducts,stats:loadStats,export:()=>{}};
+  loaders[view]?.();
 }
 async function boot() {
   try {
@@ -27,12 +32,12 @@ async function login(event) { event.preventDefault(); try { await api('/auth/log
 async function dashboard() {
   const data = await api('/dashboard'), m = data.metrics;
   $('dashCards').innerHTML = [['monthly_reservations','Reservas del mes'],['monthly_guests','Huéspedes del mes'],['arrivals','Entradas hoy'],['departures','Salidas hoy'],['staying_guests','Huéspedes alojados'],['staying_reservations','Habitaciones ocupadas']].map(([key,label]) => `<article><b>${m[key] || 0}</b><span>${label}</span></article>`).join('');
-  $('todayList').innerHTML = data.today.map(x => { const today=new Date().toISOString().slice(0,10); const isArrival=x.checkin===today; const isDeparture=x.checkout===today; const type=isArrival&&isDeparture?'Entrada y salida hoy':isArrival?'Entrada hoy':isDeparture?'Salida hoy':x.status==='checked_in'?'Alojado hoy':'Actividad de hoy'; const cls=isArrival?'arrival':isDeparture?'departure':x.status==='checked_in'?'staying':''; return `<div class="row"><span><b>${esc(x.guest_name)}</b><br><small>Hab. ${esc(x.room_number)} · ${x.checkin} → ${x.checkout}</small><br><span class="today-type ${cls}">${type}</span></span><span class="badge">${esc(x.status)}</span></div>`; }).join('') || '<p>No hay movimientos de hoy.</p>';
+  $('todayList').innerHTML = data.today.map(x => { const today=new Date().toISOString().slice(0,10); const isArrival=x.checkin===today; const isDeparture=x.checkout===today; const type=isArrival&&isDeparture?'Entrada y salida hoy':isArrival?'Entrada hoy':isDeparture?'Salida hoy':x.status==='checked_in'?'Alojado hoy':'Actividad de hoy'; const cls=isArrival?'arrival':isDeparture?'departure':x.status==='checked_in'?'staying':''; return `<div class="row"><span><b>${esc(x.guest_name)}</b><br><small>Hab. ${esc(x.room_number)} · ${x.checkin} → ${x.checkout}</small><br><span class="today-type ${cls}">${type}</span></span><span class="badge ${statusClass(x.status)}">${esc(x.status)}</span></div>`; }).join('') || '<p class="empty-state">No hay movimientos de hoy.</p>';
   $('pendingList').innerHTML = data.pendingPayments.map(x => `<div class="row"><span><b>${esc(x.guest_name)}</b><br><small>Hab. ${esc(x.room_number)} · Alojamiento: ${money(x.lodging_pending)} · Consumos: ${money(x.consumption_pending)}</small></span><b>${money(x.balance)}</b></div>`).join('') || '<p>Sin pagos pendientes.</p>';
 }
 async function loadReservations() {
   const filter = $('reservationFilter').value; reservations = await api('/reservations' + (filter ? '?status=' + filter : ''));
-  $('reservationList').innerHTML = reservations.map(r => `<div class="row"><span><b>${esc(r.guest_name)}</b><br><small>Hab. ${esc(r.room_number)} · ${r.checkin} → ${r.checkout} · ${r.adults + r.children} personas · Total ${money(r.total_price)} · Pendiente ${money(r.total_pending)}</small></span><span class="badge">${esc(r.status)}</span><div class="actions"><button data-edit="${r.id}">Editar</button><select data-status="${r.id}"><option value="">Estado</option><option value="confirmed">Confirmada</option><option value="checked_in">Check-in</option><option value="checked_out">Check-out</option><option value="cancelled">Cancelar</option><option value="no_show">No-show</option></select></div></div>`).join('') || '<p>No hay reservas.</p>';
+  $('reservationList').innerHTML = reservations.map(r => `<div class="row"><span><b>${esc(r.guest_name)}</b><br><small>Hab. ${esc(r.room_number)} · ${r.checkin} → ${r.checkout} · ${r.adults + r.children} personas · Total ${money(r.total_price)} · Pendiente ${money(r.total_pending)}</small></span><span class="badge ${statusClass(r.status)}">${esc(r.status)}</span><div class="actions"><button data-edit="${r.id}">Editar</button><select data-status="${r.id}"><option value="">Estado</option><option value="confirmed">Confirmada</option><option value="checked_in">Check-in</option><option value="checked_out">Check-out</option><option value="cancelled">Cancelar</option><option value="no_show">No-show</option></select></div></div>`).join('') || '<p class="empty-state">No hay reservas para este filtro.</p>';
   document.querySelectorAll('[data-status]').forEach(x => x.onchange = async () => { if (!x.value) return; try { await api('/reservations/' + x.dataset.status + '/status', {method:'PATCH', body:JSON.stringify({status:x.value})}); await loadReservations(); dashboard(); flash('Estado actualizado'); } catch (e) { flash(e.message, true); } });
   document.querySelectorAll('[data-edit]').forEach(x => x.onclick = () => editReservation(reservations.find(r => r.id === x.dataset.edit)));
 }
