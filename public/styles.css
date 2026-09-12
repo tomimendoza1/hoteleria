@@ -367,6 +367,10 @@ tr:last-child td { border-bottom: 0; }
 
 /* Rate calendar */
 .rate-legend { display:flex; flex-wrap:wrap; gap:14px; margin:2px 0 16px; color:var(--ink-soft); font-size:12px; font-weight:700; }
+.rate-bulk { display:flex; align-items:center; flex-wrap:wrap; gap:10px 14px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--primary); border-radius:10px; background:var(--primary-soft); color:var(--primary-dark); }
+.rate-bulk[hidden] { display:none; }
+.rate-bulk span { font-weight:900; }
+.rate-bulk small { flex:1; min-width:240px; color:var(--ink-soft); }
 .rate-legend span { display:inline-flex; align-items:center; gap:6px; }
 .rate-swatch { width:10px; height:10px; border-radius:3px; display:inline-block; }
 .rate-open { background:#dff3e5; border:1px solid #acd9ba; }
@@ -380,6 +384,11 @@ tr:last-child td { border-bottom: 0; }
 .rate-head > *, .rate-line > * { min-width:0; padding:10px 8px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
 .rate-head > * { text-align:center; font-size:11px; text-transform:capitalize; }
 .rate-head > *:first-child { text-align:left; }
+.rate-day-select { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:58px; border:0; border-right:1px solid rgba(255,255,255,.18); background:transparent; color:#fff; cursor:pointer; font:inherit; }
+.rate-day-select:hover, .rate-day-select:focus-visible { background:rgba(255,255,255,.14); outline:2px solid #fff; outline-offset:-3px; }
+.rate-day-select small { font-size:9px; opacity:.72; font-weight:700; }
+.rate-day-select.selected { background:#e6a649; color:#3c2708; box-shadow:inset 0 -4px 0 #7f4811; }
+.rate-day-select.selected small { opacity:1; }
 .rate-room { border-bottom:10px solid var(--bg); }
 .rate-room:last-child { border-bottom:0; }
 .rate-room-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--surface-muted); color:var(--ink); }

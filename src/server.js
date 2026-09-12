@@ -176,6 +176,10 @@ const rateCalendarSchema = z.object({
   closed: z.coerce.boolean().default(false),
   specialLabel: z.string().max(120).default(""),
 });
+const rateCalendarBulkSchema = z.object({
+  roomId: z.string().uuid(),
+  updates: z.array(rateCalendarSchema.omit({roomId:true})).min(1).max(31),
+});
 async function reservationBalance(id, db = query) {
   const r = await db(`SELECT r.id,r.total_price lodging_total,
     COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0) lodging_paid_rows,
@@ -401,6 +405,22 @@ app.patch("/api/rate-calendar", auth, allow("reservations"), async (req, res) =>
     RETURNING *`, [b.roomId,b.date,JSON.stringify(b.prices),b.minStay,b.closed,b.specialLabel,req.user.id]);
   await audit(req.user,"update","room_rate_calendar",r.rows[0].id,b);
   res.json(r.rows[0]);
+});
+app.patch("/api/rate-calendar/bulk", auth, allow("reservations"), async (req, res) => {
+  const b = rateCalendarBulkSchema.parse(req.body);
+  const room = (await query("SELECT id,capacity FROM rooms WHERE id=$1", [b.roomId])).rows[0];
+  if (!room) return res.status(404).json({error:"Habitación inexistente"});
+  for (const update of b.updates) for (const key of Object.keys(update.prices)) if (Number(key) < 1 || Number(key) > room.capacity) return res.status(400).json({error:"Precio para una capacidad inválida"});
+  const saved=[];
+  for (const update of b.updates) {
+    const r = await query(`INSERT INTO room_rate_calendar(room_id,rate_date,prices,min_stay,closed,special_label,created_by,updated_at)
+      VALUES($1,$2,$3::jsonb,$4,$5,$6,$7,now())
+      ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=EXCLUDED.prices,min_stay=EXCLUDED.min_stay,closed=EXCLUDED.closed,special_label=EXCLUDED.special_label,updated_at=now()
+      RETURNING *`, [b.roomId,update.date,JSON.stringify(update.prices),update.minStay,update.closed,update.specialLabel,req.user.id]);
+    saved.push(r.rows[0]);
+  }
+  await audit(req.user,"bulk_update","room_rate_calendar",b.roomId,{updates:b.updates,count:saved.length});
+  res.json({updated:saved.length,dates:b.updates.map(update=>update.date)});
 });
 app.get("/api/guests", auth, async (_, res) => {
   const { rows } = await query(`SELECT g.*,count(r.id)::int reservations_count,max(r.checkout) last_stay FROM guests g LEFT JOIN reservations r ON r.guest_id=g.id GROUP BY g.id ORDER BY g.name`);

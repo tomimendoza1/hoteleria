@@ -1,13 +1,14 @@
 const $ = (id) => document.getElementById(id);
 document.addEventListener('click', async event => { if (event.target.id !== 'reopenCash') return; if (!window.confirm('La reapertura quedará auditada y permitirá nuevos movimientos en esta fecha. ¿Continuar?')) return; try { await api('/cash/' + $('cashDate').value + '/reopen', {method:'POST', body:'{}'}); await loadCash(); flash('Caja reabierta'); } catch (error) { flash(error.message, true); } });
-document.addEventListener('click', event => { const id=event.target.id; if(id==='prevRates'){ratesDate.setDate(ratesDate.getDate()-7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='nextRates'){ratesDate.setDate(ratesDate.getDate()+7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='todayRates'){ratesDate=new Date();$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} });
-document.addEventListener('change', event => { if(event.target.id==='ratesDatePicker'){ratesDate=parseIsoDate(event.target.value)||new Date();loadRates();} });
+document.addEventListener('click', event => { const id=event.target.id; if(id==='prevRates'){rateSelectedDates.clear();ratesDate.setDate(ratesDate.getDate()-7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='nextRates'){rateSelectedDates.clear();ratesDate.setDate(ratesDate.getDate()+7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='todayRates'){rateSelectedDates.clear();ratesDate=new Date();$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} });
+document.addEventListener('change', event => { if(event.target.id==='ratesDatePicker'){rateSelectedDates.clear();ratesDate=parseIsoDate(event.target.value)||new Date();loadRates();} });
+document.addEventListener('click', event => { if(event.target.id==='clearRateSelection'){rateSelectedDates.clear();loadRates();} });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2});
 const isoDate = (date) => { const pad = (n) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; };
 const parseIsoDate = (value) => { if (!value) return null; const [year, month, day] = value.split('-').map(Number); return year && month && day ? new Date(year, month - 1, day) : null; };
 const statusClass = (s) => `status-${String(s ?? 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), ratesDate = new Date(), rateEntries = {}, formConsumptions = [], pendingPaymentConsumptionId = null, hotelSettings = {hotelName:'Hotelería'};
+let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), ratesDate = new Date(), rateEntries = {}, rateSelectedDates = new Set(), rateBulkMode = true, formConsumptions = [], pendingPaymentConsumptionId = null, hotelSettings = {hotelName:'Hotelería'};
 
 async function api(url, options = {}) {
   const response = await fetch('/api' + url, { ...options, headers: {'Content-Type':'application/json', ...(options.headers || {})} });
@@ -89,58 +90,36 @@ async function loadCalendar() {
 }
 function rateDateLabel(value) { const d=parseIsoDate(value); return new Intl.DateTimeFormat('es-AR',{weekday:'short',day:'2-digit',month:'2-digit'}).format(d).replace('.', ''); }
 function rateCellState(entry) { if (entry.closed) return 'rate-closed'; if (entry.reserved) return 'rate-reserved'; if (Number(entry.min_stay)>1) return 'rate-special'; return 'rate-open'; }
-async function saveRate(roomId, date, changes) { const key=roomId+'|'+date, entry=rateEntries[key]; if(!entry)return; Object.assign(entry,changes); try { await api('/rate-calendar',{method:'PATCH',body:JSON.stringify({roomId,date,prices:entry.prices,minStay:entry.min_stay,closed:entry.closed,specialLabel:entry.special_label})}); flash('Tarifa actualizada'); } catch(error) { flash(error.message,true); await loadRates(); } }
+function rateDatesForAction(date) { return rateBulkMode && rateSelectedDates.size > 1 && rateSelectedDates.has(date) ? [...rateSelectedDates] : [date]; }
+async function saveRate(roomId, date, changes) {
+  const dates=rateDatesForAction(date), updates=dates.map(selectedDate => {
+    const entry=rateEntries[roomId+'|'+selectedDate];
+    return {date:selectedDate,prices:{...(entry?.prices||{}),...(changes.prices||{})},minStay:changes.min_stay ?? entry?.min_stay ?? 1,closed:changes.closed ?? entry?.closed ?? false,specialLabel:entry?.special_label||''};
+  });
+  try { await api(updates.length > 1 ? '/rate-calendar/bulk' : '/rate-calendar',{method:'PATCH',body:JSON.stringify(updates.length > 1 ? {roomId,updates} : {roomId,...updates[0]})}); flash(updates.length > 1 ? updates.length+' fechas actualizadas' : 'Tarifa actualizada'); } catch(error) { flash(error.message,true); await loadRates(); }
+}
+function renderRateBulkBar() {
+  const bar=$('rateBulkBar'); if(!bar)return;
+  const count=rateSelectedDates.size;
+  bar.hidden=count===0;
+  $('rateBulkLabel').textContent=count ? count+' fecha'+(count===1?' seleccionada':'s seleccionadas') : '';
+}
 async function loadRates() {
-  const from = isoDate(ratesDate);
-  const data = await api('/rate-calendar?from=' + from + '&days=14');
-  rateEntries = {};
-  const grouped = {};
-  data.rooms.forEach(row => {
-    const date = String(row.rate_date).slice(0, 10);
-    const key = row.room_id + '|' + date;
-    const entry = {...row, date, prices: row.prices || {}, min_stay: Number(row.min_stay || 1), closed: Boolean(row.closed), special_label: row.special_label || ''};
-    rateEntries[key] = entry;
-    (grouped[row.room_id] ||= {id: row.room_id, number: row.number, type: row.type, capacity: row.capacity, days: []}).days.push(entry);
-  });
-  const days = data.rooms.slice(0, 14).map(x => String(x.rate_date).slice(0, 10));
-  const header = '<div class="rate-head"><b>Habitación / tarifa</b>' + days.map(d => '<b>' + esc(rateDateLabel(d)) + '</b>').join('') + '</div>';
-  const roomsHtml = Object.values(grouped).map(room => {
-    const byDate = Object.fromEntries(room.days.map(d => [d.date, d]));
-    let html = '<div class="rate-room"><div class="rate-room-title"><strong>Hab. ' + esc(room.number) + ' · ' + esc(room.type) + '</strong><small>Capacidad ' + room.capacity + ' huésped' + (room.capacity === 1 ? '' : 'es') + '</small></div>';
-    html += '<div class="rate-line rate-availability"><span>Disponibilidad</span>' + days.map(d => {
-      const e = byDate[d], state = rateCellState(e);
-      return '<div class="rate-cell ' + state + '"><button type="button" class="rate-status" data-rate-close="' + room.id + '|' + d + '">' + (e.closed ? 'Cerrado' : e.reserved ? 'Reservada' : 'Disponible') + '</button></div>';
-    }).join('') + '</div>';
-    for (let occ = 1; occ <= room.capacity; occ++) {
-      html += '<div class="rate-line"><span>Precio · ' + occ + ' huésped' + (occ === 1 ? '' : 'es') + '</span>' + days.map(d => {
-        const e = byDate[d], value = e.prices[String(occ)] ?? e.base_price;
-        return '<div class="rate-cell ' + rateCellState(e) + '"><label class="rate-input"><span>$</span><input type="number" min="0" step="0.01" value="' + esc(value) + '" data-rate-price="' + room.id + '|' + d + '|' + occ + '" aria-label="Precio ' + occ + ' huéspedes ' + rateDateLabel(d) + '"></label></div>';
-      }).join('') + '</div>';
-    }
-    html += '<div class="rate-line rate-minstay"><span>Estancia mínima</span>' + days.map(d => {
-      const e = byDate[d];
-      return '<div class="rate-cell ' + rateCellState(e) + '"><label class="rate-input"><input type="number" min="1" step="1" value="' + e.min_stay + '" data-rate-stay="' + room.id + '|' + d + '" aria-label="Estancia mínima ' + rateDateLabel(d) + '"><small>noches</small></label></div>';
-    }).join('') + '</div></div>';
-    return html;
-  }).join('');
-  $('ratesGrid').innerHTML = '<div class="rate-table">' + header + roomsHtml + '</div>';
-  document.querySelectorAll('[data-rate-close]').forEach(button => button.onclick = async () => {
-    const [roomId, date] = button.dataset.rateClose.split('|');
-    const entry = rateEntries[roomId + '|' + date];
-    await saveRate(roomId, date, {closed: !entry.closed});
-    await loadRates();
-  });
-  document.querySelectorAll('[data-rate-price]').forEach(input => input.onchange = async () => {
-    const [roomId, date, occ] = input.dataset.ratePrice.split('|');
-    const entry = rateEntries[roomId + '|' + date];
-    await saveRate(roomId, date, {prices: {...entry.prices, [occ]: Number(input.value)}});
-    await loadRates();
-  });
-  document.querySelectorAll('[data-rate-stay]').forEach(input => input.onchange = async () => {
-    const [roomId, date] = input.dataset.rateStay.split('|');
-    await saveRate(roomId, date, {min_stay: Math.max(1, Number(input.value) || 1)});
-    await loadRates();
-  });
+  const from=isoDate(ratesDate), data=await api('/rate-calendar?from='+from+'&days=14');
+  rateEntries={}; const grouped={};
+  data.rooms.forEach(row=>{const date=String(row.rate_date).slice(0,10),key=row.room_id+'|'+date; const entry={...row,date,prices:row.prices||{},min_stay:Number(row.min_stay||1),closed:Boolean(row.closed),special_label:row.special_label||''}; rateEntries[key]=entry; (grouped[row.room_id] ||= {id:row.room_id,number:row.number,type:row.type,capacity:row.capacity,days:[]}).days.push(entry);});
+  const days=data.rooms.slice(0,14).map(x=>String(x.rate_date).slice(0,10));
+  const header='<div class="rate-head"><b>Habitación / tarifa</b>'+days.map(d=>'<button type="button" class="rate-day-select '+(rateSelectedDates.has(d)?'selected':'')+'" data-rate-select="'+d+'"><span>'+esc(rateDateLabel(d))+'</span><small>'+ (rateSelectedDates.has(d)?'Seleccionado':'Seleccionar') +'</small></button>').join('')+'</div>';
+  const roomsHtml=Object.values(grouped).map(room=>{const byDate=Object.fromEntries(room.days.map(d=>[d.date,d])); let html='<div class="rate-room"><div class="rate-room-title"><strong>Hab. '+esc(room.number)+' · '+esc(room.type)+'</strong><small>Capacidad '+room.capacity+' huésped'+(room.capacity===1?'':'es')+'</small></div>';
+    html+='<div class="rate-line rate-availability"><span>Disponibilidad</span>'+days.map(d=>{const e=byDate[d],state=rateCellState(e); return '<div class="rate-cell '+state+'"><button type="button" class="rate-status" data-rate-close="'+room.id+'|'+d+'">'+(e.closed?'Cerrado':e.reserved?'Reservada':'Disponible')+'</button></div>';}).join('')+'</div>';
+    for(let occ=1;occ<=room.capacity;occ++){html+='<div class="rate-line"><span>Precio · '+occ+' huésped'+(occ===1?'':'es')+'</span>'+days.map(d=>{const e=byDate[d],value=e.prices[String(occ)] ?? e.base_price; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><span>$</span><input type="number" min="0" step="0.01" value="'+esc(value)+'" data-rate-price="'+room.id+'|'+d+'|'+occ+'" aria-label="Precio '+occ+' huéspedes '+rateDateLabel(d)+'"></label></div>';}).join('')+'</div>';}
+    html+='<div class="rate-line rate-minstay"><span>Estancia mínima</span>'+days.map(d=>{const e=byDate[d]; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><input type="number" min="1" step="1" value="'+e.min_stay+'" data-rate-stay="'+room.id+'|'+d+'" aria-label="Estancia mínima '+rateDateLabel(d)+'"><small>noches</small></label></div>';}).join('')+'</div></div>'; return html;}).join('');
+  $('ratesGrid').innerHTML='<div class="rate-table">'+header+roomsHtml+'</div>';
+  renderRateBulkBar();
+  document.querySelectorAll('[data-rate-select]').forEach(button=>button.onclick=()=>{const date=button.dataset.rateSelect; rateSelectedDates.has(date)?rateSelectedDates.delete(date):rateSelectedDates.add(date); loadRates();});
+  document.querySelectorAll('[data-rate-close]').forEach(button=>button.onclick=async()=>{const [roomId,date]=button.dataset.rateClose.split('|'),entry=rateEntries[roomId+'|'+date]; await saveRate(roomId,date,{closed:!entry.closed}); await loadRates();});
+  document.querySelectorAll('[data-rate-price]').forEach(input=>input.onchange=async()=>{const [roomId,date,occ]=input.dataset.ratePrice.split('|'); await saveRate(roomId,date,{prices:{[occ]:Number(input.value)}}); await loadRates();});
+  document.querySelectorAll('[data-rate-stay]').forEach(input=>input.onchange=async()=>{const [roomId,date]=input.dataset.rateStay.split('|'); await saveRate(roomId,date,{min_stay:Math.max(1,Number(input.value)||1)}); await loadRates();});
 }
 async function loadGuests() { const q = $('guestSearch').value.toLowerCase(); const guests = (await api('/guests')).filter(g => (g.name + ' ' + g.document + ' ' + g.phone).toLowerCase().includes(q)); $('guestList').innerHTML = guests.map(g => `<div class="row"><span><b>${esc(g.name)}</b><br><small>${esc(g.document)} · ${esc(g.phone)} · ${esc(g.address)}</small></span><span>${g.reservations_count} reservas<br><small>Última: ${g.last_stay || '—'}</small></span></div>`).join('') || '<p>No hay clientes.</p>'; }
 function renderRooms() { $('roomList').innerHTML = rooms.map(r => `<div class="row"><span><b>Hab. ${esc(r.number)}</b><br><small>${esc(r.type)} · capacidad ${r.capacity} · ${money(r.base_price)}</small></span><span class="badge">${esc(r.status)}</span><div class="actions"><button data-edit-room="${r.id}">Editar</button><button class="danger" data-delete-room="${r.id}">Eliminar</button></div></div>`).join(''); document.querySelectorAll('[data-edit-room]').forEach(x => x.onclick = () => editRoom(rooms.find(r => r.id === x.dataset.editRoom))); document.querySelectorAll('[data-delete-room]').forEach(x => x.onclick = () => deleteRoom(x.dataset.deleteRoom)); }
