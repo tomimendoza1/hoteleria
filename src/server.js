@@ -685,8 +685,8 @@ app.post("/api/cash/:date/reopen", auth, allow("admin"), async (req, res) => {
   if (!closure) return res.status(404).json({error:"No existe un cierre para ese día"});
   if (!closure.closed_at) return res.status(409).json({error:"La caja ya está abierta"});
   const r = await query(
-    "UPDATE cash_closures SET counted_balance=NULL,closed_by=NULL,closed_at=NULL,expected_balance=NULL,difference=NULL WHERE closure_date=$1 RETURNING *",
-    [date],
+    "UPDATE cash_closures SET closed_at=NULL,reopened_by=$2,reopened_at=now() WHERE closure_date=$1 RETURNING *",
+    [date, req.user.id],
   );
   await audit(req.user, "reopen", "cash", date, {
     previousClosedAt: closure.closed_at,
