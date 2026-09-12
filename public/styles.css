@@ -348,18 +348,22 @@ tr:last-child td { border-bottom: 0; }
 .cell.blocked { cursor: not-allowed; background: #f0f2f0; color: #a0aaa5; }
 .cell.blocked:hover { background: #f0f2f0; }
 .cell span { display: block; overflow: hidden; padding: 8px; border: 1px solid #b9d9d1; border-radius: 8px; background: var(--primary-soft); color: var(--primary-dark); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-reservation { display: grid; width: 100%; min-height: 52px; gap: 5px; padding: 8px; border: 1px solid #b9d9d1; border-radius: 8px; background: var(--primary-soft); color: var(--primary-dark); cursor: pointer; font: inherit; text-align: left; transition: transform .16s ease, box-shadow .16s ease; }
+.calendar-reservation:hover, .calendar-reservation:focus-visible { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(20, 45, 49, .16); outline: 2px solid var(--primary); outline-offset: 2px; }
+.calendar-reservation b, .calendar-reservation small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-reservation small { font-size: 10px; font-weight: 700; opacity: .86; }
 .cell span.confirmed { border-color: #b8dfc5; background: var(--success-soft); color: var(--success); }
 .cell span.checked_in { border-color: #efd49b; background: var(--warning-soft); color: var(--warning); }
 .cell span.cancelled { border-color: #f1c9c5; background: var(--danger-soft); color: var(--danger); }
 .calendar-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: -7px 0 14px; }
 .calendar-key { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink-soft); font-size: 10px; font-weight: 800; }
 .calendar-key::before { width: 8px; height: 8px; border-radius: 3px; background: currentColor; content: ""; }
-.cell span.calendar-no-deposit, .calendar-key.calendar-no-deposit { border-color: #e5c76f; background: #fff3c7; color: #7a5b0b; }
-.cell span.calendar-deposit, .calendar-key.calendar-deposit { border-color: #e3a04e; background: #f9dfb3; color: #824714; }
-.cell span.calendar-arrival-unpaid, .calendar-key.calendar-arrival-unpaid { border-color: #9ac9a7; background: #d9f0df; color: #287043; }
-.cell span.calendar-arrival-paid, .calendar-key.calendar-arrival-paid { border-color: #1b6244; background: #18583e; color: #f2fff7; }
-.cell span.calendar-booking-unpaid, .calendar-key.calendar-booking-unpaid { border-color: #83c8dc; background: #cceef6; color: #166078; }
-.cell span.calendar-booking-paid, .calendar-key.calendar-booking-paid { border-color: #1d5794; background: #194b80; color: #f1f7ff; }
+.cell span.calendar-no-deposit, .calendar-key.calendar-no-deposit, .calendar-reservation.calendar-no-deposit { border-color: #e5c76f; background: #fff3c7; color: #7a5b0b; }
+.cell span.calendar-deposit, .calendar-key.calendar-deposit, .calendar-reservation.calendar-deposit { border-color: #e3a04e; background: #f9dfb3; color: #824714; }
+.cell span.calendar-arrival-unpaid, .calendar-key.calendar-arrival-unpaid, .calendar-reservation.calendar-arrival-unpaid { border-color: #9ac9a7; background: #d9f0df; color: #287043; }
+.cell span.calendar-arrival-paid, .calendar-key.calendar-arrival-paid, .calendar-reservation.calendar-arrival-paid { border-color: #1b6244; background: #18583e; color: #f2fff7; }
+.cell span.calendar-booking-unpaid, .calendar-key.calendar-booking-unpaid, .calendar-reservation.calendar-booking-unpaid { border-color: #83c8dc; background: #cceef6; color: #166078; }
+.cell span.calendar-booking-paid, .calendar-key.calendar-booking-paid, .calendar-reservation.calendar-booking-paid { border-color: #1d5794; background: #194b80; color: #f1f7ff; }
 
 /* Forms and dialogs */
 .form { display: grid; max-width: 660px; gap: 16px; margin: 20px 0; }
