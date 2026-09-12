@@ -365,6 +365,43 @@ tr:last-child td { border-bottom: 0; }
 .cell span.calendar-booking-unpaid, .calendar-key.calendar-booking-unpaid, .calendar-reservation.calendar-booking-unpaid { border-color: #83c8dc; background: #cceef6; color: #166078; }
 .cell span.calendar-booking-paid, .calendar-key.calendar-booking-paid, .calendar-reservation.calendar-booking-paid { border-color: #1d5794; background: #194b80; color: #f1f7ff; }
 
+/* Rate calendar */
+.rate-legend { display:flex; flex-wrap:wrap; gap:14px; margin:2px 0 16px; color:var(--ink-soft); font-size:12px; font-weight:700; }
+.rate-legend span { display:inline-flex; align-items:center; gap:6px; }
+.rate-swatch { width:10px; height:10px; border-radius:3px; display:inline-block; }
+.rate-open { background:#dff3e5; border:1px solid #acd9ba; }
+.rate-reserved { background:#f5c995; border:1px solid #d98d3b; }
+.rate-special { background:#bd6724; border:1px solid #8e4718; }
+.rate-closed { background:#efb0ac; border:1px solid #c85b55; }
+.rates-grid { overflow:auto; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); box-shadow:var(--shadow-sm); }
+.rate-table { min-width:1350px; }
+.rate-head, .rate-line { display:grid; grid-template-columns:190px repeat(14,minmax(80px,1fr)); }
+.rate-head { position:sticky; top:0; z-index:4; background:var(--primary); color:#fff; }
+.rate-head > *, .rate-line > * { min-width:0; padding:10px 8px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+.rate-head > * { text-align:center; font-size:11px; text-transform:capitalize; }
+.rate-head > *:first-child { text-align:left; }
+.rate-room { border-bottom:10px solid var(--bg); }
+.rate-room:last-child { border-bottom:0; }
+.rate-room-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--surface-muted); color:var(--ink); }
+.rate-room-title small { color:var(--muted); font-size:11px; }
+.rate-line > span { display:flex; align-items:center; background:var(--surface-muted); color:var(--ink-soft); font-size:11px; font-weight:800; }
+.rate-line .rate-cell { display:flex; align-items:center; justify-content:center; min-height:48px; background:var(--surface); }
+.rate-line .rate-cell.rate-reserved { background:#fff0df; }
+.rate-line .rate-cell.rate-special { background:#f6d2af; }
+.rate-line .rate-cell.rate-closed { background:#f8d8d5; }
+.rate-line.rate-availability .rate-cell { min-height:42px; }
+.rate-status { width:100%; padding:5px 3px; border:0; border-radius:6px; background:transparent; color:var(--ink-soft); cursor:pointer; font-size:10px; font-weight:900; }
+.rate-status:hover, .rate-status:focus-visible { background:rgba(255,255,255,.7); outline:2px solid var(--primary); outline-offset:1px; }
+.rate-reserved .rate-status { color:#9a5115; }
+.rate-special .rate-status { color:#7f3b13; }
+.rate-closed .rate-status { color:#a43631; }
+.rate-input { display:flex; align-items:center; justify-content:center; gap:3px; width:100%; color:var(--muted); font-size:11px; }
+.rate-input input { width:68px; min-height:30px; padding:4px 5px; border:1px dashed var(--line-strong); border-radius:5px; background:transparent; color:var(--ink); font-size:12px; font-weight:800; text-align:center; }
+.rate-input input:focus { border-color:var(--primary); outline:2px solid var(--primary-soft); background:var(--surface); }
+.rate-input small { font-size:9px; color:var(--muted); }
+.rate-minstay .rate-input input { width:42px; }
+.rate-minstay .rate-cell.rate-special .rate-input input { color:#7f3b13; }
+
 /* Forms and dialogs */
 .form { display: grid; max-width: 660px; gap: 16px; margin: 20px 0; }
 .cash-tools { display: grid; grid-template-columns: 1fr 220px; align-items: end; margin: 0 0 20px; }

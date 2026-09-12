@@ -168,6 +168,14 @@ function dateOnly(d) {
 }
 const paymentMethodSchema = z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]);
 const cashDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10)===value; }, "Fecha inválida");
+const rateCalendarSchema = z.object({
+  roomId: z.string().uuid(),
+  date: cashDateSchema,
+  prices: z.record(z.string().regex(/^\d+$/), z.coerce.number().nonnegative()).default({}),
+  minStay: z.coerce.number().int().positive().default(1),
+  closed: z.coerce.boolean().default(false),
+  specialLabel: z.string().max(120).default(""),
+});
 async function reservationBalance(id, db = query) {
   const r = await db(`SELECT r.id,r.total_price lodging_total,
     COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0) lodging_paid_rows,
@@ -370,6 +378,29 @@ app.get("/api/calendar", auth, async (req, res) => {
     COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid
     FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.checkin < ($1::date + $2::int) AND r.checkout > $1::date AND r.status NOT IN ('cancelled','no_show') ORDER BY rm.number,r.checkin`, [from,days]);
   res.json({from,days,reservations:rows});
+});
+app.get("/api/rate-calendar", auth, async (req, res) => {
+  const from = cashDateSchema.parse(req.query.from || new Date().toISOString().slice(0,10));
+  const days = Math.min(31, Math.max(1, Number(req.query.days || 14)));
+  const {rows} = await query(`SELECT rm.id room_id,rm.number,rm.type,rm.capacity,rm.base_price,d::date rate_date,
+    rc.prices,COALESCE(rc.min_stay,1) min_stay,COALESCE(rc.closed,false) closed,COALESCE(rc.special_label,'') special_label,
+    EXISTS (SELECT 1 FROM reservations r WHERE r.room_id=rm.id AND r.checkin <= d::date AND r.checkout > d::date AND r.status NOT IN ('cancelled','no_show')) reserved
+    FROM rooms rm CROSS JOIN generate_series($1::date,($1::date + ($2 - 1)),interval '1 day') d
+    LEFT JOIN room_rate_calendar rc ON rc.room_id=rm.id AND rc.rate_date=d::date
+    WHERE rm.status <> 'out_of_service' ORDER BY rm.number,d`, [from, days]);
+  res.json({from,days,rooms:rows.map(row => ({...row,prices:row.prices || {}}))});
+});
+app.patch("/api/rate-calendar", auth, allow("reservations"), async (req, res) => {
+  const b = rateCalendarSchema.parse(req.body);
+  const room = (await query("SELECT id,capacity FROM rooms WHERE id=$1", [b.roomId])).rows[0];
+  if (!room) return res.status(404).json({error:"Habitación inexistente"});
+  for (const key of Object.keys(b.prices)) if (Number(key) < 1 || Number(key) > room.capacity) return res.status(400).json({error:"Precio para una capacidad inválida"});
+  const r = await query(`INSERT INTO room_rate_calendar(room_id,rate_date,prices,min_stay,closed,special_label,created_by,updated_at)
+    VALUES($1,$2,$3::jsonb,$4,$5,$6,$7,now())
+    ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=EXCLUDED.prices,min_stay=EXCLUDED.min_stay,closed=EXCLUDED.closed,special_label=EXCLUDED.special_label,updated_at=now()
+    RETURNING *`, [b.roomId,b.date,JSON.stringify(b.prices),b.minStay,b.closed,b.specialLabel,req.user.id]);
+  await audit(req.user,"update","room_rate_calendar",r.rows[0].id,b);
+  res.json(r.rows[0]);
 });
 app.get("/api/guests", auth, async (_, res) => {
   const { rows } = await query(`SELECT g.*,count(r.id)::int reservations_count,max(r.checkout) last_stay FROM guests g LEFT JOIN reservations r ON r.guest_id=g.id GROUP BY g.id ORDER BY g.name`);
