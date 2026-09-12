@@ -366,7 +366,9 @@ app.get("/api/reservations/:id/payments", auth, async (req,res) => {
 app.get("/api/calendar", auth, async (req, res) => {
   const from = req.query.from || dateOnly(new Date());
   const days = Math.min(31, Math.max(7, Number(req.query.days) || 7));
-  const { rows } = await query(`SELECT r.*,g.name guest_name,rm.number room_number,rm.status room_status FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.checkin < ($1::date + $2::int) AND r.checkout > $1::date AND r.status NOT IN ('cancelled','no_show') ORDER BY rm.number,r.checkin`, [from,days]);
+  const { rows } = await query(`SELECT r.*,g.name guest_name,rm.number room_number,rm.status room_status,
+    COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid
+    FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.checkin < ($1::date + $2::int) AND r.checkout > $1::date AND r.status NOT IN ('cancelled','no_show') ORDER BY rm.number,r.checkin`, [from,days]);
   res.json({from,days,reservations:rows});
 });
 app.get("/api/guests", auth, async (_, res) => {
@@ -382,6 +384,8 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
   const client = transactions.getStore();
   try {
     const b = reservationSchema.parse(req.body);
+    if (b.source === "booking" && b.deposit > 0)
+      return res.status(400).json({error:"Las reservas de Booking no llevan seña ni anticipo"});
     const nights = Math.ceil((b.checkout - b.checkin) / 86400000);
     if (nights <= 0)
       return res
@@ -447,6 +451,8 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
 });
 app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res) => {
   const b = reservationSchema.parse(req.body);
+  if (b.source === "booking" && b.deposit > 0)
+    return res.status(400).json({error:"Las reservas de Booking no llevan seña ni anticipo"});
   const nights = Math.ceil((b.checkout-b.checkin)/86400000);
   if (nights <= 0) return res.status(400).json({error:"La salida debe ser posterior a la entrada"});
   const old = (await query("SELECT * FROM reservations WHERE id=$1",[req.params.id])).rows[0];
