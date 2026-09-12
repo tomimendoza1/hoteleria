@@ -1,14 +1,14 @@
 const $ = (id) => document.getElementById(id);
 document.addEventListener('click', async event => { if (event.target.id !== 'reopenCash') return; if (!window.confirm('La reapertura quedará auditada y permitirá nuevos movimientos en esta fecha. ¿Continuar?')) return; try { await api('/cash/' + $('cashDate').value + '/reopen', {method:'POST', body:'{}'}); await loadCash(); flash('Caja reabierta'); } catch (error) { flash(error.message, true); } });
-document.addEventListener('click', event => { const id=event.target.id; if(id==='prevRates'){rateSelectedDates.clear();ratesDate.setDate(ratesDate.getDate()-7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='nextRates'){rateSelectedDates.clear();ratesDate.setDate(ratesDate.getDate()+7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='todayRates'){rateSelectedDates.clear();ratesDate=new Date();$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} });
-document.addEventListener('change', event => { if(event.target.id==='ratesDatePicker'){rateSelectedDates.clear();ratesDate=parseIsoDate(event.target.value)||new Date();loadRates();} });
-document.addEventListener('click', event => { if(event.target.id==='clearRateSelection'){rateSelectedDates.clear();loadRates();} });
+document.addEventListener('click', event => { const id=event.target.id; if(id==='prevRates'){rateSelectedDates.clear();rateSelectionAnchor=null;ratesDate.setDate(ratesDate.getDate()-7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='nextRates'){rateSelectedDates.clear();ratesDate.setDate(ratesDate.getDate()+7);$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} if(id==='todayRates'){rateSelectedDates.clear();ratesDate=new Date();$('ratesDatePicker').value=isoDate(ratesDate);loadRates();} });
+document.addEventListener('change', event => { if(event.target.id==='ratesDatePicker'){rateSelectedDates.clear();rateSelectionAnchor=null;ratesDate=parseIsoDate(event.target.value)||new Date();loadRates();} });
+document.addEventListener('click', event => { if(event.target.id==='clearRateSelection'){rateSelectedDates.clear();rateSelectionAnchor=null;loadRates();} });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits: 2});
 const isoDate = (date) => { const pad = (n) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; };
 const parseIsoDate = (value) => { if (!value) return null; const [year, month, day] = value.split('-').map(Number); return year && month && day ? new Date(year, month - 1, day) : null; };
 const statusClass = (s) => `status-${String(s ?? 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), ratesDate = new Date(), rateEntries = {}, rateSelectedDates = new Set(), rateBulkMode = true, formConsumptions = [], pendingPaymentConsumptionId = null, hotelSettings = {hotelName:'Hotelería'};
+let user, rooms = [], reservations = [], products = [], calendarDate = new Date(), ratesDate = new Date(), rateEntries = {}, rateSelectedDates = new Set(), rateSelectionAnchor = null, rateBulkMode = true, formConsumptions = [], pendingPaymentConsumptionId = null, hotelSettings = {hotelName:'Hotelería'};
 
 async function api(url, options = {}) {
   const response = await fetch('/api' + url, { ...options, headers: {'Content-Type':'application/json', ...(options.headers || {})} });
@@ -90,6 +90,7 @@ async function loadCalendar() {
 }
 function rateDateLabel(value) { const d=parseIsoDate(value); return new Intl.DateTimeFormat('es-AR',{weekday:'short',day:'2-digit',month:'2-digit'}).format(d).replace('.', ''); }
 function rateCellState(entry) { if (entry.closed) return 'rate-closed'; if (entry.reserved) return 'rate-reserved'; if (Number(entry.min_stay)>1) return 'rate-special'; return 'rate-open'; }
+function selectRateDate(date) { if (rateSelectionAnchor && rateSelectionAnchor !== date) { const start=parseIsoDate(rateSelectionAnchor), end=parseIsoDate(date), step=start <= end ? 1 : -1, cursor=new Date(start); while (true) { rateSelectedDates.add(isoDate(cursor)); if (isoDate(cursor)===date) break; cursor.setDate(cursor.getDate()+step); } } else if (rateSelectedDates.has(date)) rateSelectedDates.delete(date); else rateSelectedDates.add(date); rateSelectionAnchor=date; loadRates(); }
 function rateDatesForAction(date) { return rateBulkMode && rateSelectedDates.size > 1 && rateSelectedDates.has(date) ? [...rateSelectedDates] : [date]; }
 async function saveRate(roomId, date, changes) {
   const dates=rateDatesForAction(date), updates=dates.map(selectedDate => {
@@ -116,7 +117,7 @@ async function loadRates() {
     html+='<div class="rate-line rate-minstay"><span>Estancia mínima</span>'+days.map(d=>{const e=byDate[d]; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><input type="number" min="1" step="1" value="'+e.min_stay+'" data-rate-stay="'+room.id+'|'+d+'" aria-label="Estancia mínima '+rateDateLabel(d)+'"><small>noches</small></label></div>';}).join('')+'</div></div>'; return html;}).join('');
   $('ratesGrid').innerHTML='<div class="rate-table">'+header+roomsHtml+'</div>';
   renderRateBulkBar();
-  document.querySelectorAll('[data-rate-select]').forEach(button=>button.onclick=()=>{const date=button.dataset.rateSelect; rateSelectedDates.has(date)?rateSelectedDates.delete(date):rateSelectedDates.add(date); loadRates();});
+  document.querySelectorAll('[data-rate-select]').forEach(button=>button.onclick=()=>selectRateDate(button.dataset.rateSelect));
   document.querySelectorAll('[data-rate-close]').forEach(button=>button.onclick=async()=>{const [roomId,date]=button.dataset.rateClose.split('|'),entry=rateEntries[roomId+'|'+date]; await saveRate(roomId,date,{closed:!entry.closed}); await loadRates();});
   document.querySelectorAll('[data-rate-price]').forEach(input=>input.onchange=async()=>{const [roomId,date,occ]=input.dataset.ratePrice.split('|'); await saveRate(roomId,date,{prices:{[occ]:Number(input.value)}}); await loadRates();});
   document.querySelectorAll('[data-rate-stay]').forEach(input=>input.onchange=async()=>{const [roomId,date]=input.dataset.rateStay.split('|'); await saveRate(roomId,date,{min_stay:Math.max(1,Number(input.value)||1)}); await loadRates();});

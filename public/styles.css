@@ -371,6 +371,7 @@ tr:last-child td { border-bottom: 0; }
 .rate-bulk[hidden] { display:none; }
 .rate-bulk span { font-weight:900; }
 .rate-bulk small { flex:1; min-width:240px; color:var(--ink-soft); }
+.rate-selection-help { margin:-6px 0 0; color:var(--muted); font-size:12px; }
 .rate-legend span { display:inline-flex; align-items:center; gap:6px; }
 .rate-swatch { width:10px; height:10px; border-radius:3px; display:inline-block; }
 .rate-open { background:#dff3e5; border:1px solid #acd9ba; }
@@ -389,6 +390,7 @@ tr:last-child td { border-bottom: 0; }
 .rate-day-select small { font-size:9px; opacity:.72; font-weight:700; }
 .rate-day-select.selected { background:#e6a649; color:#3c2708; box-shadow:inset 0 -4px 0 #7f4811; }
 .rate-day-select.selected small { opacity:1; }
+.rate-day-select.selected::after { width:6px; height:6px; border-radius:50%; background:#7f4811; content:""; }
 .rate-room { border-bottom:10px solid var(--bg); }
 .rate-room:last-child { border-bottom:0; }
 .rate-room-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--surface-muted); color:var(--ink); }
