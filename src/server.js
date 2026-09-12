@@ -679,6 +679,24 @@ app.post("/api/cash/:date/close", auth, allow("cash"), async (req, res) => {
   }
 });
 
+app.post("/api/cash/:date/reopen", auth, allow("admin"), async (req, res) => {
+  const date = cashDateSchema.parse(req.params.date);
+  const closure = (await query("SELECT * FROM cash_closures WHERE closure_date=$1 FOR UPDATE", [date])).rows[0];
+  if (!closure) return res.status(404).json({error:"No existe un cierre para ese día"});
+  if (!closure.closed_at) return res.status(409).json({error:"La caja ya está abierta"});
+  const r = await query(
+    "UPDATE cash_closures SET counted_balance=NULL,closed_by=NULL,closed_at=NULL,expected_balance=NULL,difference=NULL WHERE closure_date=$1 RETURNING *",
+    [date],
+  );
+  await audit(req.user, "reopen", "cash", date, {
+    previousClosedAt: closure.closed_at,
+    previousCountedBalance: closure.counted_balance,
+    previousExpectedBalance: closure.expected_balance,
+    previousDifference: closure.difference,
+  });
+  res.json(r.rows[0]);
+});
+
 app.get("/api/products", auth, async (_, res) =>
   res.json(
     (
