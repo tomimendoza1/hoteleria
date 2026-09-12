@@ -436,7 +436,9 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
       ],
     );
     await audit(req.user, "create", "reservation", r.rows[0].id, b);
-    const initialPayment = b.deposit > 0 ? Number(b.deposit) : (b.paid ? Number(r.rows[0].total_price) : 0);
+    // La casilla de alojamiento abonado completo siempre tiene prioridad sobre la seña.
+    // La seña queda guardada como antecedente, pero no debe impedir registrar el saldo restante.
+    const initialPayment = b.paid ? Number(r.rows[0].total_price) : Number(b.deposit || 0);
     if (initialPayment > Number(r.rows[0].total_price)) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
     if (initialPayment > 0) {
       const payment = await insertPayment(client, {reservationId:r.rows[0].id, amount:initialPayment, method:b.paymentMethod, category:"lodging", userId:req.user.id, notes:"Pago inicial de alojamiento"});
@@ -466,7 +468,9 @@ app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res)
   const current=await reservationBalance(req.params.id);
   const paymentRows=await query("SELECT count(*)::int count FROM payments WHERE reservation_id=$1 AND category='lodging'",[req.params.id]);
   const currentPaid=current.lodgingPaid;
-  const targetPaid=b.deposit>0?Number(b.deposit):(b.paid?newTotal:currentPaid);
+  // Al marcar abonado completo se registra el total, incluso si la reserva ya tenía una seña.
+  // Si no está abonado completo, se conserva el pago acumulado o se registra la nueva seña.
+  const targetPaid=b.paid ? newTotal : (b.deposit>0 ? Number(b.deposit) : currentPaid);
   if(targetPaid>newTotal) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
   if(targetPaid<currentPaid) return res.status(409).json({error:"No se puede reducir un importe ya pagado; registrá una corrección contable"});
   const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=($8::numeric*$9::integer),deposit=$10,deposit_invoice=$11,due_date=$12,notes=$13,invoice=$14,payment_method=$15,updated_at=now() WHERE id=$16 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.depositInvoice,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
