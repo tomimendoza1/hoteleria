@@ -356,6 +356,15 @@ tr:last-child td { border-bottom: 0; }
 .form { display: grid; max-width: 660px; gap: 16px; margin: 20px 0; }
 .cash-tools { display: grid; grid-template-columns: 1fr 220px; align-items: end; margin: 0 0 20px; }
 .cash-tools button { align-self: end; }
+.cash-gate { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); align-items: end; gap: 22px; max-width: 760px; margin-bottom: 20px; }
+.cash-gate h3 { margin-bottom: 6px; font-size: 20px; }
+.cash-gate-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.cash-gate-form button { min-width: 126px; }
+.cash-gate > .error { grid-column: 1 / -1; margin: -8px 0 0; }
+.cash-opened { display: grid; gap: 3px; padding: 4px 0; }
+.cash-opened .eyebrow { margin: 0; }
+.cash-opened b { font-size: 16px; }
+#cashGate[hidden], #cashContent[hidden] { display: none !important; }
 dialog { width: min(820px, calc(100% - 28px)); max-height: calc(100vh - 28px); overflow-y: auto; padding: 29px; box-shadow: 0 26px 80px rgba(20, 45, 49, .23); }
 dialog::backdrop { background: rgba(11, 31, 34, .68); backdrop-filter: blur(5px); }
 dialog form { display: grid; gap: 20px; }
@@ -447,6 +456,9 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   .cards article { padding: 15px; }
   .cards article b { font-size: 23px; }
   .grid, .cash-tools { display: grid; grid-template-columns: 1fr; }
+  .cash-gate { display: grid; grid-template-columns: 1fr; gap: 15px; }
+  .cash-gate-form { grid-template-columns: 1fr; }
+  .cash-gate-form button { width: 100%; }
   .dashboard-grid { display: grid; }
   .card { padding: 18px; }
   .row { align-items: flex-start; flex-direction: column; gap: 11px; }

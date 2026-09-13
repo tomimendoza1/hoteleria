@@ -167,6 +167,7 @@ function dateOnly(d) {
   return d.toISOString().slice(0, 10);
 }
 const paymentMethodSchema = z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]);
+const cashDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10)===value; }, "Fecha inválida");
 async function reservationBalance(id, db = query) {
   const r = await db(`SELECT r.id,r.total_price lodging_total,
     COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0) lodging_paid_rows,
@@ -180,7 +181,9 @@ async function reservationBalance(id, db = query) {
 }
 async function ensureCashOpen(db, day) {
   const run=typeof db==='function'?db:(text,params)=>db.query(text,params);
-  if ((await run("SELECT 1 FROM cash_closures WHERE closure_date=$1 AND closed_at IS NOT NULL",[day])).rowCount) { const error=new Error("La caja está cerrada"); error.status=409; throw error; }
+  const row=(await run("SELECT closed_at FROM cash_closures WHERE closure_date=$1",[day])).rows[0];
+  if (!row) { const error=new Error("Primero abrí la caja de ese día"); error.status=409; throw error; }
+  if (row.closed_at) { const error=new Error("La caja está cerrada"); error.status=409; throw error; }
 }
 async function insertPayment(db, {reservationId, amount, method, category, consumptionId=null, userId, notes='', movementDate=null}) {
   const run=typeof db==='function'?db:(text,params)=>db.query(text,params);
@@ -557,15 +560,7 @@ app.post(
           "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
         )
       ).rows[0].day;
-      if (
-        (
-          await query(
-            "SELECT 1 FROM cash_closures WHERE closure_date=$1 AND closed_at IS NOT NULL",
-            [day],
-          )
-        ).rowCount
-      )
-        return res.status(409).json({ error: "La caja está cerrada" });
+      await ensureCashOpen(transactions.getStore(), day);
       const r = await query(
         "INSERT INTO payments(reservation_id,amount,method,category,notes,created_by) VALUES($1,$2,$3,'lodging',$4,$5) RETURNING *",
         [req.params.id, b.amount, b.method, b.notes, req.user.id],
@@ -589,6 +584,16 @@ app.post(
   },
 );
 
+app.post("/api/cash/:date/open", auth, allow("cash"), async (req, res) => {
+  const date=cashDateSchema.parse(req.params.date);
+  const b=z.object({openingBalance:z.coerce.number().nonnegative()}).parse(req.body);
+  const existing=(await query("SELECT * FROM cash_closures WHERE closure_date=$1 FOR UPDATE",[date])).rows[0];
+  if(existing?.closed_at) return res.status(409).json({error:"La caja ya está cerrada"});
+  if(existing) return res.json(existing);
+  const r=await query("INSERT INTO cash_closures(closure_date,opening_balance) VALUES($1,$2) RETURNING *",[date,b.openingBalance]);
+  await audit(req.user,"open","cash",date,{openingBalance:b.openingBalance});
+  res.status(201).json(r.rows[0]);
+});
 app.get("/api/cash/:date", auth, async (req, res) => {
   const [m, c] = await Promise.all([
     query(
@@ -619,13 +624,7 @@ app.post("/api/cash/movements", auth, allow("cash"), async (req, res) => {
         movementDate: z.string(),
       })
       .parse(req.body);
-    const closed = (
-      await query(
-        "SELECT 1 FROM cash_closures WHERE closure_date=$1 AND closed_at IS NOT NULL",
-        [b.movementDate],
-      )
-    ).rowCount;
-    if (closed) return res.status(409).json({ error: "La caja está cerrada" });
+    await ensureCashOpen(transactions.getStore(), b.movementDate);
     const r = await query(
       "INSERT INTO cash_movements(kind,amount,method,description,movement_date,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
       [b.kind, b.amount, b.method, b.description, b.movementDate, req.user.id],
@@ -638,39 +637,32 @@ app.post("/api/cash/movements", auth, allow("cash"), async (req, res) => {
 });
 app.post("/api/cash/:date/close", auth, allow("cash"), async (req, res) => {
   try {
+    const date=cashDateSchema.parse(req.params.date);
     const b = z
       .object({
-        openingBalance: z.coerce.number().nonnegative(),
         countedBalance: z.coerce.number().nonnegative(),
       })
       .parse(req.body);
-    if (
-      (
-        await query(
-          "SELECT 1 FROM cash_closures WHERE closure_date=$1 AND closed_at IS NOT NULL",
-          [req.params.date],
-        )
-      ).rowCount
-    )
-      return res.status(409).json({ error: "La caja ya está cerrada" });
+    const closure=(await query("SELECT * FROM cash_closures WHERE closure_date=$1 FOR UPDATE",[date])).rows[0];
+    if(!closure) return res.status(409).json({error:"Primero abrí la caja de ese día"});
+    if(closure.closed_at) return res.status(409).json({error:"La caja ya está cerrada"});
     const net = (
       await query(
         "SELECT COALESCE(sum(CASE WHEN kind='income' THEN amount ELSE -amount END),0) AS net FROM cash_movements WHERE movement_date=$1 AND method='cash'",
-        [req.params.date],
+        [date],
       )
     ).rows[0].net;
-    const expected = b.openingBalance + Number(net);
+    const expected = Number(closure.opening_balance) + Number(net);
     const r = await query(
-      "INSERT INTO cash_closures(closure_date,opening_balance,counted_balance,closed_by,closed_at,expected_balance,difference) VALUES($1,$2,$3,$4,now(),$5,$3::numeric-$5::numeric) ON CONFLICT(closure_date) DO UPDATE SET opening_balance=$2,counted_balance=$3,closed_by=$4,closed_at=now(),expected_balance=$5,difference=$3::numeric-$5::numeric RETURNING *",
+      "UPDATE cash_closures SET counted_balance=$1,closed_by=$2,closed_at=now(),expected_balance=$3,difference=$1::numeric-$3::numeric WHERE closure_date=$4 RETURNING *",
       [
-        req.params.date,
-        b.openingBalance,
         b.countedBalance,
         req.user.id,
         expected,
+        date,
       ],
     );
-    await audit(req.user, "close", "cash", req.params.date, b);
+    await audit(req.user, "close", "cash", date, b);
     res.json(r.rows[0]);
   } catch (e) {
     throw e;
