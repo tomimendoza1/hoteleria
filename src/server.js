@@ -156,6 +156,7 @@ const reservationSchema = z.object({
   source: z.string().default("direct"),
   pricePerNight: z.coerce.number().nonnegative(),
   deposit: z.coerce.number().nonnegative().default(0),
+  depositInvoice: z.coerce.boolean().default(false),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().default(""),
   invoice: z.coerce.boolean().default(false),
@@ -406,7 +407,7 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
     if (b.adults + b.children > room.capacity)
       throw new Error("La cantidad de huéspedes supera la capacidad");
     const r = await client.query(
-      `INSERT INTO reservations(guest_id,room_id,checkin,checkout,adults,children,status,source,price_per_night,total_price,deposit,due_date,notes,invoice,payment_method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9::numeric*$10::integer,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      `INSERT INTO reservations(guest_id,room_id,checkin,checkout,adults,children,status,source,price_per_night,total_price,deposit,deposit_invoice,due_date,notes,invoice,payment_method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9::numeric*$10::integer,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
       [
         guestId,
         b.roomId,
@@ -419,6 +420,7 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
         b.pricePerNight,
         nights,
         b.deposit,
+        b.depositInvoice,
         b.dueDate || null,
         b.notes,
         b.invoice,
@@ -458,7 +460,7 @@ app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res)
   const targetPaid=b.deposit>0?Number(b.deposit):(b.paid?newTotal:currentPaid);
   if(targetPaid>newTotal) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
   if(targetPaid<currentPaid) return res.status(409).json({error:"No se puede reducir un importe ya pagado; registrá una corrección contable"});
-  const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=($8::numeric*$9::integer),deposit=$10,due_date=$11,notes=$12,invoice=$13,payment_method=$14,updated_at=now() WHERE id=$15 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
+  const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=($8::numeric*$9::integer),deposit=$10,deposit_invoice=$11,due_date=$12,notes=$13,invoice=$14,payment_method=$15,updated_at=now() WHERE id=$16 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.depositInvoice,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
   if(targetPaid>currentPaid){
     const amount=Number(paymentRows.rows[0].count)===0 && currentPaid>0?targetPaid:targetPaid-currentPaid;
     const payment=await insertPayment(transactions.getStore(),{reservationId:req.params.id,amount,method:b.paymentMethod,category:"lodging",userId:req.user.id,notes:"Pago adicional de alojamiento"});
