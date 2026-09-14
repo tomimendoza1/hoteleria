@@ -89,7 +89,7 @@ async function loadCalendar() {
   document.querySelectorAll('[data-calendar-reservation]').forEach(x => x.onclick = () => { const fromList = reservations.find(r => r.id === x.dataset.calendarReservation); const fromCalendar = data.reservations.find(r => r.id === x.dataset.calendarReservation); const reservation = fromList ? {...fromCalendar, ...fromList} : fromCalendar; if (reservation) editReservation(reservation); });
 }
 function rateDateLabel(value) { const d=parseIsoDate(value); return new Intl.DateTimeFormat('es-AR',{weekday:'short',day:'2-digit',month:'2-digit'}).format(d).replace('.', ''); }
-function rateCellState(entry) { if (entry.closed) return 'rate-closed'; if (entry.reserved) return 'rate-reserved'; if (Number(entry.min_stay)>1) return 'rate-special'; return 'rate-open'; }
+function rateCellState(entry) { if (entry.allClosed || entry.closed) return 'rate-closed'; if (entry.allReserved || entry.reserved) return 'rate-reserved'; if (entry.hasSpecial || Number(entry.min_stay)>1) return 'rate-special'; return 'rate-open'; }
 function selectRateDate(date) { if (rateSelectionAnchor && rateSelectionAnchor !== date) { const start=parseIsoDate(rateSelectionAnchor), end=parseIsoDate(date), step=start <= end ? 1 : -1, cursor=new Date(start); while (true) { rateSelectedDates.add(isoDate(cursor)); if (isoDate(cursor)===date) break; cursor.setDate(cursor.getDate()+step); } } else if (rateSelectedDates.has(date)) rateSelectedDates.delete(date); else rateSelectedDates.add(date); rateSelectionAnchor=date; loadRates(); }
 function rateDatesForAction(date) { return rateBulkMode && rateSelectedDates.size > 1 && rateSelectedDates.has(date) ? [...rateSelectedDates] : [date]; }
 function ensureRateScopeControls() {
@@ -110,8 +110,9 @@ async function saveRate(roomId, date, changes) {
   });
   const categoryMode=$('rateScope')?.value==='category';
   const categoryId=categoryMode ? ($('rateCategoryTarget').value || rateEntries[roomId+'|'+date]?.category_id) : null;
+  const categoryUpdates=dates.map(selectedDate=>({date:selectedDate,...(changes.prices ? {prices:changes.prices} : {}),...(changes.min_stay !== undefined ? {minStay:changes.min_stay} : {}),...(changes.closed !== undefined ? {closed:changes.closed} : {}),...(changes.specialLabel !== undefined ? {specialLabel:changes.specialLabel} : {})}));
   const endpoint=categoryMode ? '/rate-calendar/category' : (updates.length > 1 ? '/rate-calendar/bulk' : '/rate-calendar');
-  const body=categoryMode ? {categoryId,updates} : (updates.length > 1 ? {roomId,updates} : {roomId,...updates[0]});
+  const body=categoryMode ? {categoryId,updates:categoryUpdates} : (updates.length > 1 ? {roomId,updates} : {roomId,...updates[0]});
   try { await api(endpoint,{method:'PATCH',body:JSON.stringify(body)}); flash(categoryMode ? 'Tarifa de categoría actualizada' : updates.length > 1 ? updates.length+' fechas actualizadas' : 'Tarifa actualizada'); } catch(error) { flash(error.message,true); await loadRates(); }
 }
 function renderRateBulkBar() {
@@ -127,9 +128,26 @@ function renderRateGroup(room, days, categoryMode=false) {
   const subtitle=categoryMode ? room.room_count+' habitación'+(room.room_count===1?'':'es')+' · capacidad hasta '+room.capacity : 'Capacidad '+room.capacity+' huésped'+(room.capacity===1?'':'es');
   let html=`<div class="rate-room"><div class="rate-room-title"><strong>${esc(title)}</strong><small>${esc(subtitle)}</small></div>`;
   html+=`<div class="rate-line rate-availability"><span>Disponibilidad</span>${days.map(d=>{const e=byDate[d],state=rateCellState(e); return '<div class="rate-cell '+state+'"><button type="button" class="rate-status" data-rate-close="'+room.id+'|'+d+'"'+categoryAttr+'>'+(e.closed?'Cerrado':e.reserved?'Reservada':'Disponible')+'</button></div>';}).join('')}</div>`;
-  for(let occ=1;occ<=room.capacity;occ++){html+=`<div class="rate-line"><span>Precio · ${occ} huésped${occ===1?'':'es'}</span>${days.map(d=>{const e=byDate[d],value=e.prices[String(occ)] ?? e.base_price; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><span>$</span><input type="number" min="0" step="0.01" value="'+esc(value)+'" data-rate-price="'+room.id+'|'+d+'|'+occ+'"'+categoryAttr+' aria-label="Precio '+occ+' huéspedes '+rateDateLabel(d)+'"></label></div>';}).join('')}</div>`;}
-  html+=`<div class="rate-line rate-minstay"><span>Estancia mínima</span>${days.map(d=>{const e=byDate[d]; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><input type="number" min="1" step="1" value="'+e.min_stay+'" data-rate-stay="'+room.id+'|'+d+'"'+categoryAttr+' aria-label="Estancia mínima '+rateDateLabel(d)+'"><small>noches</small></label></div>';}).join('')}</div></div>`;
+  for(let occ=1;occ<=room.capacity;occ++){html+=`<div class="rate-line"><span>Precio · ${occ} huésped${occ===1?'':'es'}</span>${days.map(d=>{const e=byDate[d],mixed=e.mixedPrices?.[String(occ)],value=mixed?'':(e.prices[String(occ)] ?? e.base_price); return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><span>$</span><input type="number" min="0" step="0.01" '+(mixed?'placeholder="Varios" ':'value="'+esc(value)+'" ')+'data-rate-price="'+room.id+'|'+d+'|'+occ+'"'+categoryAttr+' aria-label="Precio '+occ+' huéspedes '+rateDateLabel(d)+'"></label></div>';}).join('')}</div>`;}
+  html+=`<div class="rate-line rate-minstay"><span>Estancia mínima</span>${days.map(d=>{const e=byDate[d],mixed=e.mixedMinStay; return '<div class="rate-cell '+rateCellState(e)+'"><label class="rate-input"><input type="number" min="1" step="1" '+(mixed?'placeholder="Varios" ':'value="'+e.min_stay+'" ')+'data-rate-stay="'+room.id+'|'+d+'"'+categoryAttr+' aria-label="Estancia mínima '+rateDateLabel(d)+'"><small>noches</small></label></div>';}).join('')}</div></div>`;
   return html;
+}
+function aggregateRateCategory(category, members, days) {
+  const first=members[0], capacity=Math.max(...members.map(room=>room.capacity));
+  const categoryDays=days.map(date=>{
+    const entries=members.map(room=>room.days.find(entry=>entry.date===date)).filter(Boolean);
+    const prices={}, mixedPrices={};
+    for(let occ=1;occ<=capacity;occ++){
+      const values=entries.filter(entry=>entry.capacity>=occ).map(entry=>Number(entry.prices[String(occ)] ?? entry.base_price));
+      if(values.length && values.every(value=>value===values[0])) prices[String(occ)]=values[0]; else if(values.length) mixedPrices[String(occ)]=true;
+    }
+    const minValues=entries.map(entry=>Number(entry.min_stay));
+    const sameMin=minValues.length && minValues.every(value=>value===minValues[0]);
+    const allClosed=entries.length===members.length && entries.every(entry=>entry.closed);
+    const allReserved=entries.length===members.length && entries.every(entry=>entry.reserved);
+    return {...(entries[0] || {date,base_price:first.base_price,prices:{},min_stay:1,closed:false,reserved:false}),date,prices,mixedPrices,min_stay:sameMin?minValues[0]:1,mixedMinStay:!sameMin,closed:allClosed,reserved:allReserved,allClosed,allReserved,hasSpecial:minValues.some(value=>value>1)};
+  });
+  return {...first,id:first.id,category_id:category.id,category_name:category.name,type:category.name,room_count:members.length,capacity,days:categoryDays};
 }
 async function loadRates() {
   ensureRateScopeControls();
@@ -143,7 +161,7 @@ async function loadRates() {
   const days=data.rooms.slice(0,14).map(x=>String(x.rate_date).slice(0,10));
   const categoryMode=$('rateScope')?.value==='category';
   const categoryFilter=$('rateCategoryFilter')?.value || '';
-  const groups=categoryMode ? roomCategories.filter(category=>!categoryFilter || category.id===categoryFilter).map(category=>{const members=Object.values(grouped).filter(room=>room.category_id===category.id); if(!members.length)return {id:category.id,category_id:category.id,category_name:category.name,type:category.name,capacity:0,days:[],room_count:0,empty:true}; const first=members[0]; return {...first,category_name:category.name,room_count:members.length,capacity:Math.max(...members.map(room=>room.capacity))};}) : Object.values(grouped).filter(room=>!categoryFilter || room.category_id===categoryFilter);
+  const groups=categoryMode ? roomCategories.filter(category=>!categoryFilter || category.id===categoryFilter).map(category=>{const members=Object.values(grouped).filter(room=>room.category_id===category.id); if(!members.length)return {id:category.id,category_id:category.id,category_name:category.name,type:category.name,capacity:0,days:[],room_count:0,empty:true}; return aggregateRateCategory(category,members,days);}) : Object.values(grouped).filter(room=>!categoryFilter || room.category_id===categoryFilter);
   const header='<div class="rate-head"><b>'+(categoryMode?'Categoría / tarifa':'Habitación / tarifa')+'</b>'+days.map(d=>'<button type="button" class="rate-day-select '+(rateSelectedDates.has(d)?'selected':'')+'" data-rate-select="'+d+'"><span>'+esc(rateDateLabel(d))+'</span><small>'+ (rateSelectedDates.has(d)?'Seleccionado':'Seleccionar') +'</small></button>').join('')+'</div>';
   const roomsHtml=groups.map(room=>room.empty?'<div class="rate-room"><div class="rate-room-title"><strong>Categoría · '+esc(room.category_name)+'</strong><small>Sin habitaciones asignadas</small></div><p class="rate-empty">Asigná al menos una habitación a esta categoría para editar sus tarifas.</p></div>':renderRateGroup(room,days,categoryMode)).join('');
   $('ratesGrid').innerHTML='<div class="rate-table">'+header+roomsHtml+'</div>';
