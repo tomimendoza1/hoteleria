@@ -180,6 +180,10 @@ const rateCalendarBulkSchema = z.object({
   roomId: z.string().uuid(),
   updates: z.array(rateCalendarSchema.omit({roomId:true})).min(1).max(31),
 });
+const rateCategoryBulkSchema = z.object({
+  categoryId: z.string().uuid(),
+  updates: z.array(rateCalendarSchema.omit({roomId:true})).min(1).max(31),
+});
 async function reservationBalance(id, db = query) {
   const r = await db(`SELECT r.id,r.total_price lodging_total,
     COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0) lodging_paid_rows,
@@ -401,10 +405,10 @@ app.get("/api/calendar", auth, async (req, res) => {
 app.get("/api/rate-calendar", auth, async (req, res) => {
   const from = cashDateSchema.parse(req.query.from || new Date().toISOString().slice(0,10));
   const days = Math.min(31, Math.max(1, Number(req.query.days || 14)));
-  const {rows} = await query(`SELECT rm.id room_id,rm.number,rm.type,rm.capacity,rm.base_price,d::date rate_date,
+  const {rows} = await query(`SELECT rm.id room_id,rm.number,rm.type,rm.category_id,rcat.name category_name,rm.capacity,rm.base_price,d::date rate_date,
     rc.prices,COALESCE(rc.min_stay,1) min_stay,COALESCE(rc.closed,false) closed,COALESCE(rc.special_label,'') special_label,
     EXISTS (SELECT 1 FROM reservations r WHERE r.room_id=rm.id AND r.checkin <= d::date AND r.checkout > d::date AND r.status NOT IN ('cancelled','no_show')) reserved
-    FROM rooms rm CROSS JOIN generate_series($1::date,($1::date + ($2 - 1)),interval '1 day') d
+    FROM rooms rm LEFT JOIN room_categories rcat ON rcat.id=rm.category_id CROSS JOIN generate_series($1::date,($1::date + ($2 - 1)),interval '1 day') d
     LEFT JOIN room_rate_calendar rc ON rc.room_id=rm.id AND rc.rate_date=d::date
     WHERE rm.status <> 'out_of_service' ORDER BY rm.number,d`, [from, days]);
   res.json({from,days,rooms:rows.map(row => ({...row,prices:row.prices || {}}))});
@@ -430,12 +434,30 @@ app.patch("/api/rate-calendar/bulk", auth, allow("reservations"), async (req, re
   for (const update of b.updates) {
     const r = await query(`INSERT INTO room_rate_calendar(room_id,rate_date,prices,min_stay,closed,special_label,created_by,updated_at)
       VALUES($1,$2,$3::jsonb,$4,$5,$6,$7,now())
-      ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=EXCLUDED.prices,min_stay=EXCLUDED.min_stay,closed=EXCLUDED.closed,special_label=EXCLUDED.special_label,updated_at=now()
+      ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=CASE WHEN EXCLUDED.prices='{}'::jsonb THEN room_rate_calendar.prices ELSE EXCLUDED.prices END,min_stay=EXCLUDED.min_stay,closed=EXCLUDED.closed,special_label=EXCLUDED.special_label,updated_at=now()
       RETURNING *`, [b.roomId,update.date,JSON.stringify(update.prices),update.minStay,update.closed,update.specialLabel,req.user.id]);
     saved.push(r.rows[0]);
   }
   await audit(req.user,"bulk_update","room_rate_calendar",b.roomId,{updates:b.updates,count:saved.length});
   res.json({updated:saved.length,dates:b.updates.map(update=>update.date)});
+});
+app.patch("/api/rate-calendar/category", auth, allow("reservations"), async (req, res) => {
+  const b = rateCategoryBulkSchema.parse(req.body);
+  const roomsInCategory = (await query("SELECT id,capacity FROM rooms WHERE category_id=$1 AND status <> 'out_of_service'", [b.categoryId])).rows;
+  if (!roomsInCategory.length) return res.status(404).json({error:"La categoría no tiene habitaciones activas"});
+  const saved=[];
+  for (const room of roomsInCategory) {
+    for (const update of b.updates) {
+      const prices=Object.fromEntries(Object.entries(update.prices).filter(([key]) => Number(key) >= 1 && Number(key) <= room.capacity));
+      const r = await query(`INSERT INTO room_rate_calendar(room_id,rate_date,prices,min_stay,closed,special_label,created_by,updated_at)
+        VALUES($1,$2,$3::jsonb,$4,$5,$6,$7,now())
+        ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=CASE WHEN EXCLUDED.prices='{}'::jsonb THEN room_rate_calendar.prices ELSE EXCLUDED.prices END,min_stay=EXCLUDED.min_stay,closed=EXCLUDED.closed,special_label=EXCLUDED.special_label,updated_at=now()
+        RETURNING id`, [room.id,update.date,JSON.stringify(prices),update.minStay,update.closed,update.specialLabel,req.user.id]);
+      saved.push(r.rows[0].id);
+    }
+  }
+  await audit(req.user,"bulk_update","room_rate_calendar",b.categoryId,{categoryId:b.categoryId,updates:b.updates,count:saved.length});
+  res.json({updated:saved.length,rooms:roomsInCategory.length,dates:b.updates.map(update=>update.date)});
 });
 app.get("/api/guests", auth, async (_, res) => {
   const { rows } = await query(`SELECT g.*,count(r.id)::int reservations_count,max(r.checkout) last_stay FROM guests g LEFT JOIN reservations r ON r.guest_id=g.id GROUP BY g.id ORDER BY g.name`);

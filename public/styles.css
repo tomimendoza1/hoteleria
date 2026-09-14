@@ -376,6 +376,9 @@ tr:last-child td { border-bottom: 0; }
 .rate-bulk span { font-weight:900; }
 .rate-bulk small { flex:1; min-width:240px; color:var(--ink-soft); }
 .rate-selection-help { margin:-6px 0 0; color:var(--muted); font-size:12px; }
+.rate-scope-tools { display:flex; align-items:end; flex-wrap:wrap; gap:10px 14px; margin:0 0 14px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
+.rate-scope-tools label { min-width:190px; }
+.rate-scope-tools .hint { margin:0 0 9px; }
 .rate-legend span { display:inline-flex; align-items:center; gap:6px; }
 .rate-swatch { width:10px; height:10px; border-radius:3px; display:inline-block; }
 .rate-open { background:#dff3e5; border:1px solid #acd9ba; }
