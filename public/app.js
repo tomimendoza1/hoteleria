@@ -137,8 +137,8 @@ function ensureRateScopeControls() {
   const end=new Date(ratesDate); end.setDate(end.getDate()+13); $('rateRangeStart').value=isoDate(ratesDate); $('rateRangeEnd').value=isoDate(end);
   $('applyRateRange').onclick=()=>{let start=parseIsoDate($('rateRangeStart').value),end=parseIsoDate($('rateRangeEnd').value); if(!start||!end)return flash('Elegí las fechas Desde y Hasta',true); if(end<start)[start,end]=[end,start]; rateSelectedDates.clear(); const cursor=new Date(start); while(cursor<=end){rateSelectedDates.add(isoDate(cursor));cursor.setDate(cursor.getDate()+1);} rateSelectionAnchor=isoDate(end); ratesDate=new Date(start); $('ratesDatePicker').value=isoDate(ratesDate); loadRates();};
 }
-async function commitRate(roomId, date, changes, scopeOverride=null, categoryOverride=null) {
-  const dates=rateDatesForAction(date), updates=dates.map(selectedDate => {
+async function commitRate(roomId, date, changes, scopeOverride=null, categoryOverride=null, datesOverride=null) {
+  const dates=datesOverride || rateDatesForAction(date), updates=dates.map(selectedDate => {
     const entry=rateEntries[roomId+'|'+selectedDate];
     return {date:selectedDate,prices:{...(entry?.prices||{}),...(changes.prices||{})},minStay:changes.min_stay ?? entry?.min_stay ?? 1,closed:changes.closed ?? entry?.closed ?? false,specialLabel:entry?.special_label||''};
   });
@@ -150,7 +150,7 @@ async function commitRate(roomId, date, changes, scopeOverride=null, categoryOve
   try { await api(endpoint,{method:'PATCH',body:JSON.stringify(body)}); flash(categoryMode ? 'Tarifa de categoría actualizada' : updates.length > 1 ? updates.length+' fechas actualizadas' : 'Tarifa actualizada'); } catch(error) { flash(error.message,true); await loadRates(); }
 }
 function saveRate(roomId,date,changes) { const dates=rateDatesForAction(date); const categoryMode=$('rateScope')?.value==='category'; const categoryId=categoryMode ? ($('rateCategoryTarget').value || rateEntries[roomId+'|'+date]?.category_id) : null; for(const selectedDate of dates){ const key=(categoryMode?'category:':'room:')+(categoryId||roomId)+'|'+selectedDate; const existing=ratePendingChanges.find(item=>item.key===key); if(existing)existing.changes={...existing.changes,...changes,prices:{...(existing.changes.prices||{}),...(changes.prices||{})}}; else ratePendingChanges.push({key,roomId,date:selectedDate,categoryId,categoryMode,changes}); } renderRateBulkBar(); flash('Cambio preparado. Aplicá las tarifas para guardarlo.'); }
-async function applyRateChanges() { if(!ratePendingChanges.length)return; const pending=[...ratePendingChanges]; try { for(const item of pending) await commitRate(item.roomId,item.date,item.changes,item.categoryMode,item.categoryId); ratePendingChanges=[]; await loadRates(); flash('Tarifas aplicadas correctamente'); } catch(error) { flash(error.message,true); await loadRates(); } }
+async function applyRateChanges() { if(!ratePendingChanges.length)return; const pending=[...ratePendingChanges]; try { for(const item of pending) await commitRate(item.roomId,item.date,item.changes,item.categoryMode,item.categoryId,[item.date]); ratePendingChanges=[]; await loadRates(); flash('Tarifas aplicadas correctamente'); } catch(error) { flash(error.message,true); await loadRates(); } }
 function renderRateBulkBar() {
   const bar=$('rateBulkBar'); if(!bar)return;
   const count=rateSelectedDates.size;
