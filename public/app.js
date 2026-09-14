@@ -96,10 +96,12 @@ function ensureRateScopeControls() {
   if ($('rateScope')) return;
   const anchor=$('rateBulkBar'); if(!anchor)return;
   const wrap=document.createElement('div'); wrap.id='rateScopeTools'; wrap.className='rate-scope-tools';
-  wrap.innerHTML='<label>Editar por<select id="rateScope"><option value="room">Habitación</option><option value="category">Categoría</option></select></label><label>Categoría<select id="rateCategoryFilter"></select></label><select id="rateCategoryTarget" hidden></select><span class="hint">Elegí una categoría para filtrar la grilla. En modo categoría, los cambios se aplican a todas sus habitaciones.</span>';
+  wrap.innerHTML='<label>Editar por<select id="rateScope"><option value="room">Habitación</option><option value="category">Categoría</option></select></label><label>Categoría<select id="rateCategoryFilter"></select></label><select id="rateCategoryTarget" hidden></select><div class="rate-date-tools"><strong>Seleccionar fechas</strong><small>También podés hacer clic en dos fechas de la grilla para tomar el rango completo.</small><div class="rate-date-range"><label>Desde<input id="rateRangeStart" type="date"></label><span>hasta</span><label>Hasta<input id="rateRangeEnd" type="date"></label><button type="button" id="applyRateRange">Aplicar rango</button></div></div><span class="hint">Elegí una categoría para filtrar la grilla. En modo categoría, los cambios se aplican a todas sus habitaciones.</span>';
   anchor.parentNode.insertBefore(wrap,anchor);
   $('rateScope').onchange=()=>loadRates();
   $('rateCategoryFilter').onchange=()=>loadRates();
+  const end=new Date(ratesDate); end.setDate(end.getDate()+13); $('rateRangeStart').value=isoDate(ratesDate); $('rateRangeEnd').value=isoDate(end);
+  $('applyRateRange').onclick=()=>{let start=parseIsoDate($('rateRangeStart').value),end=parseIsoDate($('rateRangeEnd').value); if(!start||!end)return flash('Elegí las fechas Desde y Hasta',true); if(end<start)[start,end]=[end,start]; rateSelectedDates.clear(); const cursor=new Date(start); while(cursor<=end){rateSelectedDates.add(isoDate(cursor));cursor.setDate(cursor.getDate()+1);} rateSelectionAnchor=isoDate(end); ratesDate=new Date(start); $('ratesDatePicker').value=isoDate(ratesDate); loadRates();};
 }
 async function saveRate(roomId, date, changes) {
   const dates=rateDatesForAction(date), updates=dates.map(selectedDate => {
