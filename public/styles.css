@@ -114,6 +114,19 @@ small { color: var(--muted); }
 }
 #panel > header .header-actions { display: flex; align-items: center; gap: 9px; }
 #panel > header .header-actions button { min-height: 38px; padding: 8px 12px; }
+.sync-status { display:inline-flex; align-items:center; gap:6px; color:var(--success); font-size:11px; font-weight:800; white-space:nowrap; }
+.sync-status::before { width:7px; height:7px; border-radius:50%; background:currentColor; content:""; }
+.sync-status.offline { color:var(--danger); }
+.reservation-live-summary { background:var(--primary-soft); border-color:#b9d9d1; }
+.reservation-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.reservation-summary-grid span, .reservation-summary-grid strong { display:grid; gap:3px; padding:10px 12px; border:1px solid rgba(13,91,93,.13); border-radius:10px; background:rgba(255,255,255,.75); font-size:11px; }
+.reservation-summary-grid b { font-size:14px; color:var(--ink); }
+.reservation-summary-grid strong { grid-column:span 2; color:var(--primary-dark); }
+.availability-status { display:block; margin-top:7px; padding:6px 8px; border-radius:8px; color:var(--muted); font-size:11px; font-weight:800; }
+.availability-status.available { background:var(--success-soft); color:var(--success); }
+.availability-status.unavailable { background:var(--danger-soft); color:var(--danger); }
+.availability-status.loading { background:var(--gold-soft); color:var(--warning); }
+@media (max-width:720px) { .reservation-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .reservation-summary-grid strong { grid-column:1/-1; } }
 #panel > nav {
   position: fixed;
   z-index: 10;
@@ -351,7 +364,14 @@ tr:last-child td { border-bottom: 0; }
 .calhead > *:first-child { border-radius: 9px 0 0 0; text-align: left; }
 .calhead > *:last-child { border-radius: 0 9px 0 0; }
 .calrow > b { display: flex; align-items: center; background: var(--surface-muted); color: var(--ink-soft); }
+.calendar-room-label { display:grid; align-content:center; gap:4px; background:var(--surface-muted); color:var(--ink-soft); }
+.calendar-room-label small { color:var(--muted); font-size:10px; }
 .cell { min-height: 74px; color: var(--muted); cursor: pointer; }
+.cell.free-cell { width:100%; margin:0; border:0; border-right:1px solid var(--line); border-bottom:1px solid var(--line); border-radius:0; background:transparent; color:var(--primary); font-size:18px; font-weight:900; }
+.cell.free-cell:hover, .cell.free-cell:focus-visible { background:var(--primary-soft); outline:2px solid var(--primary); outline-offset:-3px; }
+.cell.free-cell.blocked { color:#9aa5a0; font-size:10px; font-weight:800; }
+.cell.free-cell.blocked:hover { background:#f0f2f0; }
+.filtered-cell { display:grid; place-items:center; background:#fafbf9; color:#b2bbb6; cursor:default; font-size:12px; }
 .cell:hover { background: var(--primary-soft); }
 .cell.blocked { cursor: not-allowed; background: #f0f2f0; color: #a0aaa5; }
 .cell.blocked:hover { background: #f0f2f0; }
@@ -366,6 +386,46 @@ tr:last-child td { border-bottom: 0; }
 .calendar-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: -7px 0 14px; }
 .calendar-key { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink-soft); font-size: 10px; font-weight: 800; }
 .calendar-key::before { width: 8px; height: 8px; border-radius: 3px; background: currentColor; content: ""; }
+.calendar-tools { display:flex; align-items:end; flex-wrap:wrap; gap:10px 14px; margin:0 0 14px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
+.calendar-tools label { min-width:170px; }
+.calendar-tools .hint { max-width:360px; margin:0 0 9px; }
+.calendar-side-panel { margin-top:14px; padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--surface); box-shadow:var(--shadow-md); }
+.calendar-side-panel[hidden] { display:none; }
+.side-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
+.side-panel-head h3 { margin:3px 0 4px; }
+.side-panel-head p { margin:0; color:var(--muted); font-size:12px; }
+.icon-button { width:34px; min-height:34px; padding:0; border-radius:50%; background:var(--surface-muted); color:var(--ink); font-size:20px; }
+.side-panel-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:16px 0; }
+.side-panel-summary span { display:grid; gap:4px; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--surface-muted); }
+.side-panel-summary small { color:var(--muted); font-size:10px; }
+.side-panel-summary b { font-size:13px; }
+.side-panel-actions { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.side-panel-status { display:block; max-width:260px; }
+.cash-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.cash-summary-grid article { display:grid; gap:5px; padding:14px; border:1px solid var(--line); border-radius:11px; background:var(--surface-muted); }
+.cash-summary-grid article small { color:var(--muted); font-size:10px; font-weight:800; }
+.cash-summary-grid article b { color:var(--ink); font-size:17px; }
+.cash-summary-grid .cash-positive b { color:var(--success); }
+.cash-summary-grid .cash-negative b { color:var(--danger); }
+.cash-summary-grid .cash-total { border-color:#b9d9d1; background:var(--primary-soft); }
+.cash-breakdown { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:12px; }
+.cash-breakdown strong { grid-column:1/-1; font-size:11px; }
+.cash-breakdown span { display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; color:var(--muted); font-size:10px; }
+.cash-breakdown b { color:var(--ink); }
+.cash-state { margin:12px 0 0; padding:9px 11px; border-radius:9px; font-size:11px; font-weight:800; }
+.cash-state.open { background:var(--success-soft); color:var(--success); }
+.cash-state.closed { background:var(--danger-soft); color:var(--danger); }
+.cash-movement.income > b { color:var(--success); }
+.cash-movement.expense > b, .cash-movement.withdrawal > b { color:var(--danger); }
+.stock-tools { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:0 0 14px; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
+.stock-tools > input, .stock-tools > select { width:auto; min-width:190px; margin:0; }
+.stock-tools .check-inline { display:flex; align-items:center; gap:6px; width:auto; margin:0; color:var(--ink-soft); font-size:11px; font-weight:800; }
+.stock-tools .check-inline input { width:auto; margin:0; }
+.stock-kpis { display:flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
+.stock-kpis span { padding:6px 9px; border:1px solid var(--line); border-radius:7px; background:var(--surface-muted); color:var(--muted); font-size:10px; }
+.stock-kpis span b { color:var(--ink); }
+.stock-kpis .low b { color:var(--danger); }
+.stock-ok { color:var(--success); font-size:11px; font-weight:800; }
 .cell span.calendar-no-deposit, .calendar-key.calendar-no-deposit, .calendar-reservation.calendar-no-deposit { border-color: #e5c76f; background: #fff3c7; color: #7a5b0b; }
 .cell span.calendar-deposit, .calendar-key.calendar-deposit, .calendar-reservation.calendar-deposit { border-color: #e3a04e; background: #f9dfb3; color: #824714; }
 .cell span.calendar-arrival-unpaid, .calendar-key.calendar-arrival-unpaid, .calendar-reservation.calendar-arrival-unpaid { border-color: #9ac9a7; background: #d9f0df; color: #287043; }
@@ -379,6 +439,7 @@ tr:last-child td { border-bottom: 0; }
 .rate-bulk[hidden] { display:none; }
 .rate-bulk span { font-weight:900; }
 .rate-bulk small { flex:1; min-width:240px; color:var(--ink-soft); }
+.rate-bulk #applyRateChanges { background:var(--primary-dark); color:#fff; }
 .rate-selection-help { margin:-6px 0 0; color:var(--muted); font-size:12px; }
 .rate-scope-tools { display:flex; align-items:end; flex-wrap:wrap; gap:10px 14px; margin:0 0 14px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
 .rate-scope-tools label { min-width:190px; }
@@ -533,6 +594,12 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   .calendar-actions { align-items: stretch; flex-direction: column; }
   .calendar-actions > label { min-width: 0; }
   .calendar-actions .actions { width: 100%; }
+  .calendar-tools { align-items:stretch; flex-direction:column; }
+  .calendar-tools label { min-width:0; }
+  .calendar-tools .hint { max-width:none; margin:0; }
+  .side-panel-summary { grid-template-columns:1fr; }
+  .cash-summary-grid { grid-template-columns:repeat(2,1fr); }
+  .cash-breakdown { grid-template-columns:repeat(2,1fr); }
   .calendar-legend { gap: 6px; }
   .calendar-key { font-size: 9px; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

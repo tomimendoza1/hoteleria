@@ -131,6 +131,15 @@ async function audit(user, action, entity, entityId, details = {}) {
     [user?.id, action, entity, entityId, JSON.stringify(details)],
   );
 }
+const paymentMethodSchema = z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]);
+const cashDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10)===value; }, "Fecha inválida");
+const consumptionInputSchema = z.object({
+  description: z.string().trim().min(2),
+  amount: z.coerce.number().positive(),
+  consumedOn: cashDateSchema,
+  chargedOn: cashDateSchema.nullable().optional(),
+  method: paymentMethodSchema.default("other"),
+});
 const reservationSchema = z.object({
   guest: z.object({
     name: z.string().trim().min(2),
@@ -162,12 +171,11 @@ const reservationSchema = z.object({
   invoice: z.coerce.boolean().default(false),
   paymentMethod: z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]).default("other"),
   paid: z.coerce.boolean().default(false),
+  consumptions: z.array(consumptionInputSchema).default([]),
 });
 function dateOnly(d) {
   return d.toISOString().slice(0, 10);
 }
-const paymentMethodSchema = z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]);
-const cashDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10)===value; }, "Fecha inválida");
 const rateCalendarSchema = z.object({
   roomId: z.string().uuid(),
   date: cashDateSchema,
@@ -408,6 +416,18 @@ app.get("/api/calendar", auth, async (req, res) => {
     FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.checkin < ($1::date + $2::int) AND r.checkout > $1::date AND r.status NOT IN ('cancelled','no_show') ORDER BY rm.number,r.checkin`, [from,days]);
   res.json({from,days,reservations:rows});
 });
+app.get("/api/availability", auth, async (req, res) => {
+  const roomId=z.string().uuid().parse(req.query.roomId);
+  const checkin=cashDateSchema.parse(req.query.checkin), checkout=cashDateSchema.parse(req.query.checkout);
+  const guests=z.coerce.number().int().positive().parse(req.query.guests || 1);
+  const excludeId=req.query.excludeId ? z.string().uuid().parse(req.query.excludeId) : null;
+  if (checkout <= checkin) return res.status(400).json({error:"La salida debe ser posterior a la entrada"});
+  const room=(await query("SELECT id,number,capacity,status FROM rooms WHERE id=$1",[roomId])).rows[0];
+  if (!room) return res.status(404).json({error:"Habitación inexistente"});
+  const conflict=(await query("SELECT id FROM reservations WHERE room_id=$1 AND checkin < $3::date AND checkout > $2::date AND status NOT IN ('cancelled','no_show','checked_out') AND ($4::uuid IS NULL OR id<>$4)",[roomId,checkin,checkout,excludeId])).rows[0];
+  const capacityOk=guests<=room.capacity;
+  res.json({available:room.status==='available' && capacityOk && !conflict,capacity:room.capacity,capacityOk,roomStatus:room.status,conflict:Boolean(conflict),message:room.status!=='available'?'Habitación fuera de servicio':!capacityOk?`La capacidad máxima es de ${room.capacity} huéspedes`:conflict?'La habitación ya tiene una reserva superpuesta':'Disponible'});
+});
 app.get("/api/rate-calendar", auth, async (req, res) => {
   const from = cashDateSchema.parse(req.query.from || new Date().toISOString().slice(0,10));
   const days = Math.min(31, Math.max(1, Number(req.query.days || 14)));
@@ -537,6 +557,17 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
     if (initialPayment > 0) {
       const payment = await insertPayment(client, {reservationId:r.rows[0].id, amount:initialPayment, method:b.paymentMethod, category:"lodging", userId:req.user.id, notes:"Pago inicial de alojamiento"});
       await audit(req.user, "create", "payment", payment.id, {reservationId:r.rows[0].id, amount:initialPayment, category:"lodging"});
+    }
+    for (const consumption of b.consumptions) {
+      const created = await client.query(
+        "INSERT INTO reservation_consumptions(reservation_id,description,amount,consumed_on,charged_on,method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+        [r.rows[0].id, consumption.description, consumption.amount, consumption.consumedOn, consumption.chargedOn || null, consumption.method, req.user.id],
+      );
+      if (consumption.chargedOn) {
+        const payment = await insertPayment(client, {reservationId:r.rows[0].id, amount:consumption.amount, method:consumption.method, category:"consumption", consumptionId:created.rows[0].id, userId:req.user.id, notes:`Pago de consumo: ${consumption.description}`, movementDate:consumption.chargedOn});
+        await client.query("UPDATE reservation_consumptions SET payment_id=$1 WHERE id=$2", [payment.id, created.rows[0].id]);
+      }
+      await audit(req.user, "create", "consumption", created.rows[0].id, consumption);
     }
     res.status(201).json(r.rows[0]);
   } catch (e) {
