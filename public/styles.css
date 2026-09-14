@@ -319,6 +319,10 @@ label { display: block; color: var(--ink-soft); font-size: 12px; font-weight: 80
 .row > span:first-child { min-width: 0; }
 .row b { color: var(--ink); }
 .row small { line-height: 1.65; }
+.category-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 0 0 18px; }
+.category-chip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.category-chip span { display: grid; gap: 4px; min-width: 0; }
+.category-chip small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .actions button, .actions select { width: auto; min-height: 36px; margin: 0; padding: 8px 11px; font-size: 11px; }
 .today-type { display: inline-flex; margin-top: 7px; padding: 4px 8px; border-radius: 99px; background: var(--surface-muted); color: var(--ink-soft); font-size: 10px; font-weight: 850; }

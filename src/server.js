@@ -296,8 +296,22 @@ app.patch = (route, ...handlers) =>
   patch(route, ...handlers.slice(0, -1), atomic(handlers.at(-1)));
 app.delete = (route, ...handlers) =>
   del(route, ...handlers.slice(0, -1), atomic(handlers.at(-1)));
+app.get("/api/room-categories", auth, async (_, res) =>
+  res.json((await query("SELECT * FROM room_categories WHERE active=true ORDER BY name")).rows),
+);
+app.post("/api/room-categories", auth, allow("reservations"), async (req, res) => {
+  const b=z.object({name:z.string().trim().min(2).max(80),description:z.string().max(240).default("")}).parse(req.body);
+  const r=await query("INSERT INTO room_categories(name,description) VALUES($1,$2) RETURNING *",[b.name,b.description]);
+  await audit(req.user,"create","room_category",r.rows[0].id,b); res.status(201).json(r.rows[0]);
+});
+app.patch("/api/room-categories/:id", auth, allow("reservations"), async (req, res) => {
+  const b=z.object({name:z.string().trim().min(2).max(80),description:z.string().max(240).default("")}).parse(req.body);
+  const r=await query("UPDATE room_categories SET name=$1,description=$2 WHERE id=$3 RETURNING *",[b.name,b.description,req.params.id]);
+  if(!r.rows[0]) return res.status(404).json({error:"Categoría inexistente"});
+  await audit(req.user,"update","room_category",req.params.id,b); res.json(r.rows[0]);
+});
 app.get("/api/rooms", auth, async (_, res) =>
-  res.json((await query("SELECT * FROM rooms ORDER BY number")).rows),
+  res.json((await query("SELECT r.*,c.name category_name,c.description category_description FROM rooms r LEFT JOIN room_categories c ON c.id=r.category_id ORDER BY r.number")).rows),
 );
 app.post("/api/rooms", auth, allow("reservations"), async (req, res) => {
   try {
@@ -306,6 +320,7 @@ app.post("/api/rooms", auth, allow("reservations"), async (req, res) => {
         number: z.string().min(1),
         floor: z.string().default(""),
         type: z.string().default("standard"),
+        categoryId: z.string().uuid().nullable().optional(),
         capacity: z.coerce.number().int().positive(),
         basePrice: z.coerce.number().nonnegative(),
         status: z
@@ -315,8 +330,8 @@ app.post("/api/rooms", auth, allow("reservations"), async (req, res) => {
       })
       .parse(req.body);
     const r = await query(
-      "INSERT INTO rooms(number,floor,type,capacity,base_price,status,notes) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
-      [b.number, b.floor, b.type, b.capacity, b.basePrice, b.status, b.notes],
+      "INSERT INTO rooms(number,floor,type,category_id,capacity,base_price,status,notes) VALUES($1,$2,COALESCE((SELECT name FROM room_categories WHERE id=$4),$3),$4,$5,$6,$7,$8) RETURNING *",
+      [b.number, b.floor, b.type, b.categoryId || null, b.capacity, b.basePrice, b.status, b.notes],
     );
     await audit(req.user, "create", "room", r.rows[0].id, b);
     res.status(201).json(r.rows[0]);
@@ -325,8 +340,8 @@ app.post("/api/rooms", auth, allow("reservations"), async (req, res) => {
   }
 });
 app.patch("/api/rooms/:id", auth, allow("reservations"), async (req, res) => {
-  const b = z.object({number:z.string().min(1),floor:z.string().default(""),type:z.string().default("standard"),capacity:z.coerce.number().int().positive(),basePrice:z.coerce.number().nonnegative(),status:z.enum(["available","maintenance","out_of_service"]),notes:z.string().default("")}).parse(req.body);
-  const r=await query("UPDATE rooms SET number=$1,floor=$2,type=$3,capacity=$4,base_price=$5,status=$6,notes=$7 WHERE id=$8 RETURNING *",[b.number,b.floor,b.type,b.capacity,b.basePrice,b.status,b.notes,req.params.id]);
+  const b = z.object({number:z.string().min(1),floor:z.string().default(""),type:z.string().default("standard"),categoryId:z.string().uuid().nullable().optional(),capacity:z.coerce.number().int().positive(),basePrice:z.coerce.number().nonnegative(),status:z.enum(["available","maintenance","out_of_service"]),notes:z.string().default("")}).parse(req.body);
+  const r=await query("UPDATE rooms SET number=$1,floor=$2,type=COALESCE((SELECT name FROM room_categories WHERE id=$4),$3),category_id=$4,capacity=$5,base_price=$6,status=$7,notes=$8 WHERE id=$9 RETURNING *",[b.number,b.floor,b.type,b.categoryId || null,b.capacity,b.basePrice,b.status,b.notes,req.params.id]);
   if(!r.rows[0]) return res.status(404).json({error:"Habitación inexistente"});
   await audit(req.user,"update","room",req.params.id,b); res.json(r.rows[0]);
 });
