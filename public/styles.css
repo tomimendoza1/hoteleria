@@ -402,6 +402,7 @@ tr:last-child td { border-bottom: 0; }
 .rate-room:last-child { border-bottom:0; }
 .rate-room-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--surface-muted); color:var(--ink); }
 .rate-room-title small { color:var(--muted); font-size:11px; }
+.rate-empty { margin:0; padding:16px; color:var(--muted); font-size:12px; background:var(--surface); }
 .rate-line > span { display:flex; align-items:center; background:var(--surface-muted); color:var(--ink-soft); font-size:11px; font-weight:800; }
 .rate-line .rate-cell { display:flex; align-items:center; justify-content:center; min-height:58px; background:var(--surface); }
 .rate-line .rate-cell.rate-reserved { background:#fff0df; }
