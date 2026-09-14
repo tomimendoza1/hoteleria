@@ -457,7 +457,7 @@ app.patch("/api/rate-calendar/category", auth, allow("reservations"), async (req
       const prices=Object.fromEntries(Object.entries(update.prices).filter(([key]) => Number(key) >= 1 && Number(key) <= room.capacity));
       const r = await query(`INSERT INTO room_rate_calendar(room_id,rate_date,prices,min_stay,closed,special_label,created_by,updated_at)
         VALUES($1,$2,$3::jsonb,COALESCE($4,1),COALESCE($5,false),COALESCE($6,''),$7,now())
-        ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=CASE WHEN EXCLUDED.prices='{}'::jsonb THEN room_rate_calendar.prices ELSE EXCLUDED.prices END,min_stay=CASE WHEN $4 IS NULL THEN room_rate_calendar.min_stay ELSE EXCLUDED.min_stay END,closed=CASE WHEN $5 IS NULL THEN room_rate_calendar.closed ELSE EXCLUDED.closed END,special_label=CASE WHEN $6 IS NULL THEN room_rate_calendar.special_label ELSE EXCLUDED.special_label END,updated_at=now()
+        ON CONFLICT(room_id,rate_date) DO UPDATE SET prices=room_rate_calendar.prices || EXCLUDED.prices,min_stay=CASE WHEN $4 IS NULL THEN room_rate_calendar.min_stay ELSE EXCLUDED.min_stay END,closed=CASE WHEN $5 IS NULL THEN room_rate_calendar.closed ELSE EXCLUDED.closed END,special_label=CASE WHEN $6 IS NULL THEN room_rate_calendar.special_label ELSE EXCLUDED.special_label END,updated_at=now()
         RETURNING id`, [room.id,update.date,JSON.stringify(prices),update.minStay ?? null,update.closed ?? null,update.specialLabel ?? null,req.user.id]);
       saved.push(r.rows[0].id);
     }
