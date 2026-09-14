@@ -96,9 +96,10 @@ function ensureRateScopeControls() {
   if ($('rateScope')) return;
   const anchor=$('rateBulkBar'); if(!anchor)return;
   const wrap=document.createElement('div'); wrap.id='rateScopeTools'; wrap.className='rate-scope-tools';
-  wrap.innerHTML='<label>Editar por<select id="rateScope"><option value="room">Habitación</option><option value="category">Categoría</option></select></label><label id="rateCategoryTargetWrap" hidden>Categoría<select id="rateCategoryTarget"></select></label><span class="hint">En modo categoría, los cambios se aplican a todas sus habitaciones.</span>';
+  wrap.innerHTML='<label>Editar por<select id="rateScope"><option value="room">Habitación</option><option value="category">Categoría</option></select></label><label>Categoría<select id="rateCategoryFilter"></select></label><select id="rateCategoryTarget" hidden></select><span class="hint">Elegí una categoría para filtrar la grilla. En modo categoría, los cambios se aplican a todas sus habitaciones.</span>';
   anchor.parentNode.insertBefore(wrap,anchor);
-  $('rateScope').onchange=()=>{ $('rateCategoryTargetWrap').hidden=$('rateScope').value!=='category'; loadRates(); };
+  $('rateScope').onchange=()=>loadRates();
+  $('rateCategoryFilter').onchange=()=>loadRates();
 }
 async function saveRate(roomId, date, changes) {
   const dates=rateDatesForAction(date), updates=dates.map(selectedDate => {
@@ -130,13 +131,17 @@ function renderRateGroup(room, days, categoryMode=false) {
 }
 async function loadRates() {
   ensureRateScopeControls();
+  const selectedCategory=$('rateCategoryFilter').value;
+  $('rateCategoryFilter').innerHTML='<option value="">Todas</option>'+roomCategories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('rateCategoryTarget').innerHTML=roomCategories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if([...$('rateCategoryFilter').options].some(option=>option.value===selectedCategory))$('rateCategoryFilter').value=selectedCategory;
   const from=isoDate(ratesDate), data=await api('/rate-calendar?from='+from+'&days=14');
   rateEntries={}; const grouped={};
   data.rooms.forEach(row=>{const date=String(row.rate_date).slice(0,10),key=row.room_id+'|'+date; const entry={...row,date,prices:row.prices||{},min_stay:Number(row.min_stay||1),closed:Boolean(row.closed),special_label:row.special_label||''}; rateEntries[key]=entry; (grouped[row.room_id] ||= {id:row.room_id,number:row.number,type:row.type,category_id:row.category_id,category_name:row.category_name,capacity:row.capacity,days:[]}).days.push(entry);});
   const days=data.rooms.slice(0,14).map(x=>String(x.rate_date).slice(0,10));
   const categoryMode=$('rateScope')?.value==='category';
-  const groups=categoryMode ? roomCategories.map(category=>{const members=Object.values(grouped).filter(room=>room.category_id===category.id); if(!members.length)return {id:category.id,category_id:category.id,category_name:category.name,type:category.name,capacity:0,days:[],room_count:0,empty:true}; const first=members[0]; return {...first,category_name:category.name,room_count:members.length,capacity:Math.max(...members.map(room=>room.capacity))};}) : Object.values(grouped);
+  const categoryFilter=$('rateCategoryFilter')?.value || '';
+  const groups=categoryMode ? roomCategories.filter(category=>!categoryFilter || category.id===categoryFilter).map(category=>{const members=Object.values(grouped).filter(room=>room.category_id===category.id); if(!members.length)return {id:category.id,category_id:category.id,category_name:category.name,type:category.name,capacity:0,days:[],room_count:0,empty:true}; const first=members[0]; return {...first,category_name:category.name,room_count:members.length,capacity:Math.max(...members.map(room=>room.capacity))};}) : Object.values(grouped).filter(room=>!categoryFilter || room.category_id===categoryFilter);
   const header='<div class="rate-head"><b>'+(categoryMode?'Categoría / tarifa':'Habitación / tarifa')+'</b>'+days.map(d=>'<button type="button" class="rate-day-select '+(rateSelectedDates.has(d)?'selected':'')+'" data-rate-select="'+d+'"><span>'+esc(rateDateLabel(d))+'</span><small>'+ (rateSelectedDates.has(d)?'Seleccionado':'Seleccionar') +'</small></button>').join('')+'</div>';
   const roomsHtml=groups.map(room=>room.empty?'<div class="rate-room"><div class="rate-room-title"><strong>Categoría · '+esc(room.category_name)+'</strong><small>Sin habitaciones asignadas</small></div><p class="rate-empty">Asigná al menos una habitación a esta categoría para editar sus tarifas.</p></div>':renderRateGroup(room,days,categoryMode)).join('');
   $('ratesGrid').innerHTML='<div class="rate-table">'+header+roomsHtml+'</div>';
