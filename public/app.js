@@ -121,6 +121,7 @@ function openCalendarSidePanel(z) {
   panel.querySelector('[data-calendar-edit]').onclick=()=>{panel.hidden=true;editReservation(z);};
   panel.querySelectorAll('[data-calendar-status]').forEach(button=>button.onclick=()=>changeCalendarStatus(z.id,button.dataset.calendarStatus));
   panel.querySelector('#calendarPanelStatus').onchange=e=>{if(e.target.value)changeCalendarStatus(z.id,e.target.value);};
+  requestAnimationFrame(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
 async function changeCalendarStatus(id,status) { try { await api('/reservations/'+id+'/status',{method:'PATCH',body:JSON.stringify({status})}); $('calendarSidePanel').hidden=true; await loadCalendar(); await loadReservations(); dashboard(); flash('Estado actualizado'); } catch(error) { flash(error.message,true); } }
 function openCalendarReservation(roomId,day) { resetReservation(); $('roomId').value=roomId; $('checkin').value=day; const end=parseIsoDate(day); end.setDate(end.getDate()+1); $('checkout').value=isoDate(end); updateReservationSummary(); checkReservationAvailability(); $('reservationDialog').showModal(); }
