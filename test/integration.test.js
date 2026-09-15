@@ -94,6 +94,71 @@ test(
       assert.ok(
         (await call("/reservations")).data.some((r) => r.id === reservation.id),
       );
+      const invoiceRoom = await call("/rooms", "POST", {
+        number: "invoice-test-" + randomUUID(),
+        capacity: 2,
+        basePrice: 150,
+      });
+      const day = (
+        await pool.query(
+          "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
+        )
+      ).rows[0].day;
+      let todayClosure = (await call("/cash/" + day)).data.closure;
+      if (!todayClosure) {
+        const opened = await call("/cash/" + day + "/open", "POST", { openingBalance: 0 });
+        assert.equal(opened.status, 201, JSON.stringify(opened));
+        todayClosure = opened.data;
+      }
+      const canRegisterDepositInvoice = !todayClosure?.closed_at;
+      const lodgingInvoiceNumber = "A-0004-" + randomUUID();
+      const depositInvoiceNumber = "A-0004-" + randomUUID();
+      const invoiceInput = {
+        guest: { name: "Huésped con factura" },
+        roomId: invoiceRoom.data.id,
+        checkin: "2032-03-01",
+        checkout: "2032-03-03",
+        adults: 1,
+        pricePerNight: 150,
+        deposit: canRegisterDepositInvoice ? 50 : 0,
+        invoice: true,
+        invoiceNumber: lodgingInvoiceNumber,
+        depositInvoice: canRegisterDepositInvoice,
+        depositInvoiceNumber: canRegisterDepositInvoice ? depositInvoiceNumber : null,
+      };
+      const invoiceReservation = await call("/reservations", "POST", invoiceInput);
+      assert.equal(invoiceReservation.status, 201, JSON.stringify(invoiceReservation));
+      const invoices = await call("/invoices");
+      assert.equal(invoices.status, 200);
+      assert.equal(invoices.data.filter((x) => x.reservation_id === invoiceReservation.data.id).length, canRegisterDepositInvoice ? 2 : 1);
+      const missingInvoiceNumber = await call("/reservations", "POST", {
+        ...invoiceInput,
+        guest: { name: "Sin número de factura" },
+        invoiceNumber: "",
+        depositInvoice: false,
+        depositInvoiceNumber: null,
+        roomId: room.data.id,
+        checkin: "2032-04-01",
+        checkout: "2032-04-03",
+      });
+      assert.equal(missingInvoiceNumber.status, 400);
+      const duplicateInvoice = await call("/reservations", "POST", {
+        ...invoiceInput,
+        guest: { name: "Factura duplicada" },
+        roomId: room.data.id,
+        checkin: "2032-05-01",
+        checkout: "2032-05-03",
+        depositInvoice: false,
+        deposit: 0,
+        depositInvoiceNumber: null,
+      });
+      assert.equal(duplicateInvoice.status, 409);
+      const editedInvoice = await call("/reservations/" + invoiceReservation.data.id, "PATCH", {
+        ...invoiceInput,
+        invoiceNumber: lodgingInvoiceNumber + "-edit",
+      });
+      assert.equal(editedInvoice.status, 200, JSON.stringify(editedInvoice));
+      assert.equal((await call("/invoices?q=" + encodeURIComponent(lodgingInvoiceNumber + "-edit"))).data.length, 1);
       const before = Number(
         (await pool.query("SELECT count(*) FROM payments")).rows[0].count,
       );
@@ -112,12 +177,6 @@ test(
         ),
         before,
       );
-      const day = (
-        await pool.query(
-          "SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS day",
-        )
-      ).rows[0].day;
-      const todayClosure = (await call("/cash/" + day)).data.closure;
       if (!todayClosure?.closed_at) {
         const paid = await call(
           "/reservations/" + reservation.id + "/payments",

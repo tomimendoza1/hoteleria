@@ -169,12 +169,53 @@ const reservationSchema = z.object({
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().default(""),
   invoice: z.coerce.boolean().default(false),
+  invoiceNumber: z.string().trim().max(120).optional().nullable(),
   paymentMethod: z.enum(["cash", "transfer", "debit", "credit", "booking", "other"]).default("other"),
+  depositInvoiceNumber: z.string().trim().max(120).optional().nullable(),
   paid: z.coerce.boolean().default(false),
   consumptions: z.array(consumptionInputSchema).default([]),
 });
 function dateOnly(d) {
   return d.toISOString().slice(0, 10);
+}
+function cleanInvoiceNumber(value) {
+  const number = String(value ?? "").trim();
+  return number || null;
+}
+function validateInvoiceInput(body) {
+  const invoiceNumber = cleanInvoiceNumber(body.invoiceNumber);
+  const depositInvoiceNumber = cleanInvoiceNumber(body.depositInvoiceNumber);
+  if (body.invoice && !invoiceNumber)
+    throw new Error("Ingresá el número de factura del alojamiento");
+  if (body.depositInvoice && !depositInvoiceNumber)
+    throw new Error("Ingresá el número de factura de la seña");
+  if (body.invoice && Number(body.pricePerNight) === 0)
+    throw new Error("El alojamiento facturado debe tener un importe mayor a cero");
+  if (body.depositInvoice && Number(body.deposit) === 0)
+    throw new Error("La seña facturada debe tener un importe mayor a cero");
+  return { invoiceNumber, depositInvoiceNumber };
+}
+async function syncReservationInvoices(client, { reservationId, invoiceNumber, depositInvoiceNumber, lodgingAmount, depositAmount, userId }) {
+  const entries = [
+    { kind: "lodging", number: invoiceNumber, amount: Number(lodgingAmount) },
+    { kind: "deposit", number: depositInvoiceNumber, amount: Number(depositAmount) },
+  ];
+  const saved = [];
+  for (const entry of entries) {
+    if (!entry.number) {
+      await client.query("DELETE FROM invoices WHERE reservation_id=$1 AND kind=$2", [reservationId, entry.kind]);
+      continue;
+    }
+    const result = await client.query(
+      `INSERT INTO invoices(reservation_id,kind,invoice_number,amount,created_by,updated_at)
+       VALUES($1,$2,$3,$4,$5,now())
+       ON CONFLICT (reservation_id,kind) DO UPDATE SET invoice_number=EXCLUDED.invoice_number,amount=EXCLUDED.amount,updated_at=now()
+       RETURNING *`,
+      [reservationId, entry.kind, entry.number, entry.amount, userId],
+    );
+    saved.push(result.rows[0]);
+  }
+  return saved;
 }
 const rateCalendarSchema = z.object({
   roomId: z.string().uuid(),
@@ -374,7 +415,9 @@ app.get("/api/reservations", auth, async (req, res) => {
     `SELECT r.*, g.name guest_name,g.document,g.phone,g.address, rm.number room_number,
       COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid,
       COALESCE((SELECT sum(c.amount) FROM reservation_consumptions c WHERE c.reservation_id=r.id),0) AS consumption_total,
-      COALESCE((SELECT sum(CASE WHEN p.id IS NOT NULL THEN p.amount WHEN c.charged_on IS NOT NULL THEN c.amount ELSE 0 END) FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=r.id),0) AS consumption_paid
+      COALESCE((SELECT sum(CASE WHEN p.id IS NOT NULL THEN p.amount WHEN c.charged_on IS NOT NULL THEN c.amount ELSE 0 END) FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=r.id),0) AS consumption_paid,
+      (SELECT i.invoice_number FROM invoices i WHERE i.reservation_id=r.id AND i.kind='lodging') AS invoice_number,
+      (SELECT i.invoice_number FROM invoices i WHERE i.reservation_id=r.id AND i.kind='deposit') AS deposit_invoice_number
       FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE ($1='' OR r.status=$1) ORDER BY r.checkin`,
     [req.query.status || ""],
   );
@@ -387,7 +430,10 @@ app.get("/api/dashboard", auth, async (_, res) => {
     count(*) FILTER (WHERE status='checked_in') staying_reservations,
     coalesce(sum(adults+children) FILTER (WHERE status='checked_in'),0) staying_guests,
     count(*) FILTER (WHERE checkin=CURRENT_DATE AND status NOT IN ('cancelled','no_show')) arrivals,
-    count(*) FILTER (WHERE checkout=CURRENT_DATE AND status NOT IN ('cancelled','no_show')) departures
+    count(*) FILTER (WHERE checkout=CURRENT_DATE AND status NOT IN ('cancelled','no_show')) departures,
+    count(*) FILTER (WHERE status='pending') pending_reservations,
+    (SELECT count(*) FROM rooms WHERE status='available') available_rooms,
+    (SELECT count(*) FROM rooms WHERE status IN ('maintenance','out_of_service')) unavailable_rooms
     FROM reservations`).then(x => x.rows[0]);
   const [today, alerts] = await Promise.all([
     query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.checkout,r.status,r.adults,r.children FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.status='checked_in' OR r.checkin=CURRENT_DATE OR r.checkout=CURRENT_DATE ORDER BY r.checkin`),
@@ -398,6 +444,29 @@ app.get("/api/dashboard", auth, async (_, res) => {
       FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.status NOT IN ('cancelled','no_show','checked_out') ORDER BY r.checkin LIMIT 50`)
   ]);
   res.json({ metrics:d, today:today.rows, pendingPayments:alerts.rows.map(x => ({...x,lodging_pending:Math.max(0,Number(x.total_price||0)-Number(x.lodging_paid)),consumption_pending:Math.max(0,Number(x.consumption_total)-Number(x.consumption_paid)),balance:Math.max(0,Number(x.total_price||0)+Number(x.consumption_total)-Number(x.lodging_paid)-Number(x.consumption_paid))})).filter(x => x.balance > 0) });
+});
+app.get("/api/invoices", auth, async (req, res) => {
+  const queryText = String(req.query.q || "").trim();
+  const kind = req.query.kind === "lodging" || req.query.kind === "deposit" ? req.query.kind : "";
+  const from = req.query.from || "";
+  const to = req.query.to || "";
+  const { rows } = await query(
+    `SELECT i.*, g.name guest_name, g.document, rm.number room_number,
+            r.checkin, r.checkout, r.status reservation_status
+       FROM invoices i
+       JOIN reservations r ON r.id=i.reservation_id
+       JOIN guests g ON g.id=r.guest_id
+       JOIN rooms rm ON rm.id=r.room_id
+      WHERE ($1='' OR i.kind=$1)
+        AND ($2='' OR i.issued_on >= $2::date)
+        AND ($3='' OR i.issued_on <= $3::date)
+        AND ($4='' OR lower(i.invoice_number) LIKE '%' || lower($4) || '%'
+             OR lower(g.name) LIKE '%' || lower($4) || '%'
+             OR lower(rm.number) LIKE '%' || lower($4) || '%')
+      ORDER BY i.issued_on DESC, i.created_at DESC`,
+    [kind, from, to, queryText],
+  );
+  res.json(rows);
 });
 app.get("/api/reservations/:id/balance", auth, async (req,res) => {
   const balance=await reservationBalance(req.params.id);
@@ -498,6 +567,7 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
   const client = transactions.getStore();
   try {
     const b = reservationSchema.parse(req.body);
+    const invoiceData = validateInvoiceInput(b);
     if (b.source === "booking" && b.deposit > 0)
       return res.status(400).json({error:"Las reservas de Booking no llevan seña ni anticipo"});
     const nights = Math.ceil((b.checkout - b.checkin) / 86400000);
@@ -550,6 +620,16 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
       ],
     );
     await audit(req.user, "create", "reservation", r.rows[0].id, b);
+    const invoices = await syncReservationInvoices(client, {
+      reservationId: r.rows[0].id,
+      invoiceNumber: b.invoice ? invoiceData.invoiceNumber : null,
+      depositInvoiceNumber: b.depositInvoice ? invoiceData.depositInvoiceNumber : null,
+      lodgingAmount: r.rows[0].total_price,
+      depositAmount: b.deposit,
+      userId: req.user.id,
+    });
+    for (const invoice of invoices)
+      await audit(req.user, "create", "invoice", invoice.id, invoice);
     // La casilla de alojamiento abonado completo siempre tiene prioridad sobre la seña.
     // La seña queda guardada como antecedente, pero no debe impedir registrar el saldo restante.
     const initialPayment = b.paid ? Number(r.rows[0].total_price) : Number(b.deposit || 0);
@@ -578,6 +658,7 @@ app.post("/api/reservations", auth, allow("reservations"), async (req, res) => {
 });
 app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res) => {
   const b = reservationSchema.parse(req.body);
+  const invoiceData = validateInvoiceInput(b);
   if (b.source === "booking" && b.deposit > 0)
     return res.status(400).json({error:"Las reservas de Booking no llevan seña ni anticipo"});
   const nights = Math.ceil((b.checkout-b.checkin)/86400000);
@@ -599,6 +680,16 @@ app.patch("/api/reservations/:id", auth, allow("reservations"), async (req, res)
   if(targetPaid>newTotal) return res.status(400).json({error:"El pago no puede superar el total del alojamiento"});
   if(targetPaid<currentPaid) return res.status(409).json({error:"No se puede reducir un importe ya pagado; registrá una corrección contable"});
   const r = await query(`UPDATE reservations SET room_id=$1,checkin=$2,checkout=$3,adults=$4,children=$5,status=$6,source=$7,price_per_night=$8,total_price=($8::numeric*$9::integer),deposit=$10,deposit_invoice=$11,due_date=$12,notes=$13,invoice=$14,payment_method=$15,updated_at=now() WHERE id=$16 RETURNING *`,[b.roomId,dateOnly(b.checkin),dateOnly(b.checkout),b.adults,b.children,b.status,b.source,b.pricePerNight,nights,b.deposit,b.depositInvoice,b.dueDate||null,b.notes,b.invoice,b.paymentMethod,req.params.id]);
+  const invoices = await syncReservationInvoices(transactions.getStore(), {
+    reservationId: req.params.id,
+    invoiceNumber: b.invoice ? invoiceData.invoiceNumber : null,
+    depositInvoiceNumber: b.depositInvoice ? invoiceData.depositInvoiceNumber : null,
+    lodgingAmount: newTotal,
+    depositAmount: b.deposit,
+    userId: req.user.id,
+  });
+  for (const invoice of invoices)
+    await audit(req.user, "update", "invoice", invoice.id, invoice);
   if(targetPaid>currentPaid){
     const amount=Number(paymentRows.rows[0].count)===0 && currentPaid>0?targetPaid:targetPaid-currentPaid;
     const payment=await insertPayment(transactions.getStore(),{reservationId:req.params.id,amount,method:b.paymentMethod,category:"lodging",userId:req.user.id,notes:"Pago adicional de alojamiento"});
@@ -922,6 +1013,7 @@ app.get("/api/export", auth, allow("read"), async (_, res) => {
     closures: (await query("SELECT * FROM cash_closures")).rows,
     products: (await query("SELECT * FROM products")).rows,
     inventory: (await query("SELECT * FROM inventory_movements")).rows,
+    invoices: (await query("SELECT * FROM invoices")).rows,
     audit: (await query("SELECT * FROM audit_log")).rows,
   };
   res.json(data);
@@ -1047,6 +1139,8 @@ app.use((err, req, res, next) => {
     return res
       .status(409)
       .json({ error: "La habitación ya está reservada en esas fechas" });
+  if (err.constraint === "invoices_number_normalized_idx")
+    return res.status(409).json({ error: "El número de factura ya está registrado" });
   if (err.status) return res.status(err.status).json({error:err.message});
   if (["23503", "23505", "23514", "22P02", "22007", "22008"].includes(err.code))
     return res
@@ -1062,6 +1156,10 @@ app.use((err, req, res, next) => {
     "El pago supera el saldo pendiente del alojamiento",
     "No se puede reducir un importe ya pagado; registrá una corrección contable",
     "Consumo inexistente",
+    "Ingresá el número de factura del alojamiento",
+    "Ingresá el número de factura de la seña",
+    "El alojamiento facturado debe tener un importe mayor a cero",
+    "La seña facturada debe tener un importe mayor a cero",
   ];
   if (known.includes(err.message))
     return res.status(400).json({ error: err.message });

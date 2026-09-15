@@ -28,6 +28,9 @@ try {
   assert.ok((await page.locator("#roomList .row").count()) >= 31);
   await page.getByRole("button", { name: "Reservas", exact: true }).click();
   await page.locator("#reservations").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Facturas", exact: true }).click();
+  await page.locator("#invoices").waitFor({ state: "visible" });
+  await page.locator("#invoiceSearch").fill("A-");
   await page.getByRole("button", { name: "Stock", exact: true }).click();
   await page.locator("#stock").waitFor({ state: "visible" });
   await page.reload();
