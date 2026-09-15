@@ -23,6 +23,15 @@ try {
   await page.locator("#password").fill(process.env.ADMIN_PASSWORD);
   await page.locator("#loginForm button").click();
   await page.locator("#panel").waitFor({ state: "visible", timeout: 30000 });
+  await page.locator("#dashboardDate").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Calendario", exact: true }).click();
+  await page.locator("#calendar").waitFor({ state: "visible" });
+  const calendarReservation = page.locator("[data-calendar-reservation]").first();
+  if (await calendarReservation.count()) {
+    await calendarReservation.click();
+    await page.locator("#calendarSidePanel").waitFor({ state: "visible" });
+    assert.ok(await page.locator("#calendarSidePanel").evaluate((node) => node.classList.contains("selected")));
+  }
   await page.getByRole("button", { name: "Habitaciones", exact: true }).click();
   await page.locator("#roomList .row").first().waitFor();
   assert.ok((await page.locator("#roomList .row").count()) >= 31);
@@ -38,7 +47,7 @@ try {
   const cookies = await context.cookies();
   const session = cookies.find((c) => c.name === "hotel_session");
   assert.ok(session.httpOnly);
-  assert.ok(session.secure);
+  if (base.startsWith("https://")) assert.ok(session.secure);
   assert.equal(session.sameSite, "Lax");
   await page.screenshot({ path: ".private/dashboard.png", fullPage: true });
   await page.getByRole("button", { name: "Salir", exact: true }).click();

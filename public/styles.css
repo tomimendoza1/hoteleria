@@ -216,6 +216,8 @@ small { color: var(--muted); }
 #panel > nav button[data-view="stock"]::before { content: "▤"; }
 #panel > nav button[data-view="stats"]::before { content: "▥"; }
 #panel > nav button[data-view="export"]::before { content: "↓"; }
+.nav-section { display:none; margin:12px 10px 3px; color:rgba(255,255,255,.42); font-size:9px; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }
+.nav-section:first-child { margin-top:5px; }
 
 /* Desktop navigation behaves like a compact icon rail and expands on hover/focus. */
 @media (min-width: 721px) {
@@ -246,6 +248,8 @@ small { color: var(--muted); }
     justify-content: flex-start;
     font-size: 13px;
   }
+  #panel:has(> nav:hover) > nav .nav-section,
+  #panel:has(> nav:focus-within) > nav .nav-section { display:block; }
 }
 #panel > #flash {
   min-height: 24px;
@@ -270,6 +274,28 @@ small { color: var(--muted); }
 .dashboard-actions { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:20px; }
 .dashboard-actions h2 { margin:0 0 4px; }
 .dashboard-actions .hint { margin:0; }
+.dashboard-date { display:flex; align-items:end; gap:10px; min-width:190px; }
+.dashboard-date label { min-width:170px; }
+.dashboard-date .hint { padding-bottom:11px; white-space:nowrap; font-size:10px; }
+.dashboard-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(300px,.9fr); gap:18px; margin-top:20px; }
+.dashboard-layout > .card { min-width:0; }
+.dashboard-availability { grid-column:1/-1; }
+.card-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.card-heading h2 { margin-bottom:12px; }
+.text-button { min-height:30px; padding:5px 8px; background:transparent; color:var(--primary); font-size:11px; }
+.text-button:hover { background:var(--primary-soft); box-shadow:none; }
+.metric-card { cursor:pointer; text-align:left; }
+.metric-card:focus-visible { outline:3px solid rgba(198,155,90,.45); outline-offset:2px; }
+.quick-filters { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
+.quick-filters button { min-height:34px; padding:7px 11px; font-size:11px; }
+.quick-filters button.active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); }
+.more-actions { position:relative; }
+.more-actions summary { display:flex; min-height:36px; align-items:center; padding:8px 11px; border:1px solid var(--line); border-radius:10px; background:var(--surface-muted); color:var(--ink-soft); cursor:pointer; font-size:11px; font-weight:800; list-style:none; }
+.more-actions summary::-webkit-details-marker { display:none; }
+.more-actions[open] { z-index:3; }
+.more-actions[open] select { position:absolute; right:0; top:42px; width:170px; margin:0; box-shadow:var(--shadow-md); }
+.reservation-stepper { display:flex; flex-wrap:wrap; gap:6px; padding:10px 12px; border:1px solid var(--line); border-radius:11px; background:var(--surface-muted); color:var(--muted); font-size:10px; font-weight:850; }
+.reservation-stepper span { padding:4px 7px; border-radius:6px; background:var(--surface); }
 .reservation-tools, .invoice-tools { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; margin:0 0 20px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
 .reservation-tools label, .invoice-tools label { min-width:145px; flex:1; }
 .reservation-tools .search, .invoice-tools .search { min-width:260px; }
@@ -358,6 +384,11 @@ label { display: block; color: var(--ink-soft); font-size: 12px; font-weight: 80
 .today-type.arrival { background: var(--success-soft); color: var(--success); }
 .today-type.departure { background: var(--danger-soft); color: var(--danger); }
 .today-type.staying { background: var(--warning-soft); color: var(--warning); }
+.availability-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.availability-kpis span { display:grid; gap:3px; padding:13px; border:1px solid var(--line); border-radius:10px; background:var(--surface-muted); color:var(--muted); font-size:11px; }
+.availability-kpis b { color:var(--ink); font-size:20px; }
+.availability-bar { height:8px; margin-top:12px; overflow:hidden; border-radius:99px; background:var(--surface-sunken); }
+.availability-bar i { display:block; height:100%; border-radius:inherit; background:var(--primary); transition:width .25s ease; }
 
 /* Small, high-signal state treatment inspired by compact admin dashboards. */
 .badge.status-confirmed::before, .badge.status-checked-in::before { background: var(--success); }
@@ -413,6 +444,8 @@ tr:last-child td { border-bottom: 0; }
 .side-panel-summary b { font-size:13px; }
 .side-panel-actions { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
 .side-panel-status { display:block; max-width:260px; }
+.calendar-side-panel.selected { animation:panel-highlight 1.2s ease; }
+@keyframes panel-highlight { 0% { box-shadow:0 0 0 4px var(--gold-soft),var(--shadow-md); } 100% { box-shadow:var(--shadow-md); } }
 .cash-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
 .cash-summary-grid article { display:grid; gap:5px; padding:14px; border:1px solid var(--line); border-radius:11px; background:var(--surface-muted); }
 .cash-summary-grid article small { color:var(--muted); font-size:10px; font-weight:800; }
@@ -427,6 +460,9 @@ tr:last-child td { border-bottom: 0; }
 .cash-state { margin:12px 0 0; padding:9px 11px; border-radius:9px; font-size:11px; font-weight:800; }
 .cash-state.open { background:var(--success-soft); color:var(--success); }
 .cash-state.closed { background:var(--danger-soft); color:var(--danger); }
+.cash-difference { border-color:#e4c58b !important; background:var(--warning-soft) !important; }
+.cash-difference.balanced { border-color:#b9d9d1 !important; background:var(--success-soft) !important; }
+.cash-difference.has-difference b { color:var(--danger) !important; }
 .cash-movement.income > b { color:var(--success); }
 .cash-movement.expense > b, .cash-movement.withdrawal > b { color:var(--danger); }
 .stock-tools { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:0 0 14px; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-sm); }
@@ -606,6 +642,10 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   .dashboard-actions { align-items:stretch; flex-direction:column; gap:12px; }
   .dashboard-actions .actions { width:100%; justify-content:stretch; }
   .dashboard-actions .actions button { flex:1; }
+  .dashboard-date { align-items:stretch; flex-direction:column; gap:0; }
+  .dashboard-date .hint { padding:0; }
+  .dashboard-layout { display:flex; flex-direction:column; }
+  .dashboard-availability { order:3; }
   .reservation-tools, .invoice-tools { align-items:stretch; flex-direction:column; }
   .reservation-tools label, .invoice-tools label, .reservation-tools .search, .invoice-tools .search { min-width:0; width:100%; }
   .calendar-actions { align-items: stretch; flex-direction: column; }
@@ -627,6 +667,10 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   .cash-gate-form { grid-template-columns: 1fr; }
   .cash-gate-form button { width: 100%; }
   .dashboard-grid { display: grid; }
+  .availability-kpis { gap:6px; }
+  .availability-kpis span { padding:9px; font-size:10px; }
+  .availability-kpis b { font-size:17px; }
+  .reservation-stepper { gap:4px; }
   .card { padding: 18px; }
   .row { align-items: flex-start; flex-direction: column; gap: 11px; }
   #reservationList .row { display: flex; }

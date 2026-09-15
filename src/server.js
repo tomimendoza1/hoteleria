@@ -423,20 +423,22 @@ app.get("/api/reservations", auth, async (req, res) => {
   );
   res.json(rows.map(r => ({...r, lodging_pending:Math.max(0,Number(r.total_price)-Number(r.lodging_paid)), consumption_pending:Math.max(0,Number(r.consumption_total)-Number(r.consumption_paid)), total_pending:Math.max(0,Number(r.total_price)+Number(r.consumption_total)-Number(r.lodging_paid)-Number(r.consumption_paid))})));
 });
-app.get("/api/dashboard", auth, async (_, res) => {
+app.get("/api/dashboard", auth, async (req, res) => {
+  const day = cashDateSchema.parse(req.query.date || new Date().toISOString().slice(0, 10));
   const d = await query(`SELECT
-    count(*) FILTER (WHERE date_trunc('month',checkin)=date_trunc('month',CURRENT_DATE) AND status NOT IN ('cancelled','no_show')) monthly_reservations,
-    coalesce(sum(adults+children) FILTER (WHERE date_trunc('month',checkin)=date_trunc('month',CURRENT_DATE) AND status NOT IN ('cancelled','no_show')),0) monthly_guests,
+    count(*) FILTER (WHERE date_trunc('month',checkin)=date_trunc('month',$1::date) AND status NOT IN ('cancelled','no_show')) monthly_reservations,
+    coalesce(sum(adults+children) FILTER (WHERE date_trunc('month',checkin)=date_trunc('month',$1::date) AND status NOT IN ('cancelled','no_show')),0) monthly_guests,
     count(*) FILTER (WHERE status='checked_in') staying_reservations,
     coalesce(sum(adults+children) FILTER (WHERE status='checked_in'),0) staying_guests,
-    count(*) FILTER (WHERE checkin=CURRENT_DATE AND status NOT IN ('cancelled','no_show')) arrivals,
-    count(*) FILTER (WHERE checkout=CURRENT_DATE AND status NOT IN ('cancelled','no_show')) departures,
+    count(*) FILTER (WHERE checkin=$1::date AND status NOT IN ('cancelled','no_show')) arrivals,
+    count(*) FILTER (WHERE checkout=$1::date AND status NOT IN ('cancelled','no_show')) departures,
     count(*) FILTER (WHERE status='pending') pending_reservations,
     (SELECT count(*) FROM rooms WHERE status='available') available_rooms,
+    (SELECT count(*) FROM rooms WHERE status='available' AND EXISTS (SELECT 1 FROM reservations r2 WHERE r2.room_id=rooms.id AND r2.status NOT IN ('cancelled','no_show','checked_out') AND r2.checkin <= $1::date AND r2.checkout > $1::date)) occupied_rooms,
     (SELECT count(*) FROM rooms WHERE status IN ('maintenance','out_of_service')) unavailable_rooms
-    FROM reservations`).then(x => x.rows[0]);
+    FROM reservations`, [day]).then(x => x.rows[0]);
   const [today, alerts] = await Promise.all([
-    query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.checkout,r.status,r.adults,r.children FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE r.status='checked_in' OR r.checkin=CURRENT_DATE OR r.checkout=CURRENT_DATE ORDER BY r.checkin`),
+    query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.checkout,r.status,r.adults,r.children FROM reservations r JOIN guests g ON g.id=r.guest_id JOIN rooms rm ON rm.id=r.room_id WHERE (r.status='checked_in' AND r.checkin <= $1::date AND r.checkout > $1::date) OR r.checkin=$1::date OR r.checkout=$1::date ORDER BY r.checkin`, [day]),
     query(`SELECT r.id,g.name guest_name,rm.number room_number,r.checkin,r.total_price,
       COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging'),0)+CASE WHEN NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id=r.id AND p.category='lodging') THEN r.deposit ELSE 0 END AS lodging_paid,
       COALESCE((SELECT sum(c.amount) FROM reservation_consumptions c WHERE c.reservation_id=r.id),0) AS consumption_total,
@@ -711,7 +713,7 @@ app.post("/api/reservations/:id/consumptions", auth, allow("reservations"), asyn
 app.get("/api/reservations/:id/consumptions", auth, async (req,res) => {
   res.json((await query("SELECT c.*,p.id paid_payment_id,p.paid_at,p.method paid_method FROM reservation_consumptions c LEFT JOIN payments p ON p.consumption_id=c.id WHERE c.reservation_id=$1 ORDER BY c.consumed_on,c.created_at",[req.params.id])).rows);
 });
-app.patch("/api/consumptions/:id/pay", auth, allow("cash"), async (req,res) => {
+app.patch("/api/consumptions/:id/pay", auth, allow("cash", "reservations"), async (req,res) => {
   const client=transactions.getStore();
   const b=z.object({paidOn:z.string(),method:paymentMethodSchema}).parse(req.body);
   const c=(await client.query("SELECT * FROM reservation_consumptions WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
@@ -756,7 +758,7 @@ app.patch(
 app.post(
   "/api/reservations/:id/payments",
   auth,
-  allow("cash"),
+  allow("cash", "reservations"),
   async (req, res) => {
     try {
       const b = z
