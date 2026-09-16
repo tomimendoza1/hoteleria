@@ -83,6 +83,15 @@ small { color: var(--muted); }
   box-shadow: 0 10px 24px rgba(13, 91, 93, .2);
 }
 #login > p:not(.eyebrow) { color: var(--muted); margin-bottom: 25px; }
+.login-status { min-height:1.25em; margin:8px 0 0; color:var(--muted); font-size:12px; }
+.login button.is-loading { display:flex; align-items:center; justify-content:center; gap:8px; }
+.button-spinner, .loading-spinner { display:inline-block; width:15px; height:15px; flex:0 0 15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+.app-loading { display:flex; align-items:center; gap:12px; margin-left:var(--sidebar-width); padding:14px clamp(24px,4vw,58px); border-bottom:1px solid var(--line); background:var(--primary-soft); color:var(--primary-dark); }
+.app-loading[hidden] { display:none; }
+.app-loading b, .app-loading small { display:block; }
+.app-loading small { margin-top:2px; color:var(--ink-soft); font-size:11px; }
+.app-loading .loading-spinner { color:var(--primary); }
+@keyframes spin { to { transform:rotate(360deg); } }
 
 /* Application shell: the existing nav becomes the desktop sidebar. */
 #panel { min-height: 100vh; }
@@ -625,7 +634,7 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
 }
 
 @media (max-width: 720px) {
-  #panel > header, #panel > nav, #panel > #flash, #panel > .view { margin-left: 0; }
+  #panel > header, #panel > nav, #panel > #flash, #panel > .view, #panel > .app-loading { margin-left: 0; }
   #panel > header { position: sticky; z-index: 8; top: 0; min-height: 76px; padding: 16px; }
   #panel > header h1 { font-size: 23px; }
   #panel > header small { font-size: 11px; }
@@ -635,6 +644,7 @@ legend { padding: 0 8px; color: var(--primary); font-size: 12px; font-weight: 90
   #panel > nav button::before { width: 22px; height: 22px; font-size: 14px; }
   #panel > nav button:hover, #panel > nav button.active { transform: none; }
   #panel > #flash { margin-right: 0; padding: 8px 16px 0; }
+  #panel > .app-loading { padding:12px 16px; }
   #panel > .view { padding: 23px 16px 94px; }
   .sectionHead { align-items: stretch; flex-direction: column; gap: 14px; margin-bottom: 19px; }
   .sectionHead > button, .sectionHead .actions { width: 100%; }

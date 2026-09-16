@@ -23,6 +23,8 @@ try {
   await page.locator("#password").fill(process.env.ADMIN_PASSWORD);
   await page.locator("#loginForm button").click();
   await page.locator("#panel").waitFor({ state: "visible", timeout: 30000 });
+  await page.locator("#appLoading").waitFor({ state: "attached", timeout: 30000 });
+  await page.locator("#appLoading").waitFor({ state: "hidden", timeout: 30000 });
   await page.locator("#dashboardDate").waitFor({ state: "visible" });
   await page.getByRole("button", { name: "Calendario", exact: true }).click();
   await page.locator("#calendar").waitFor({ state: "visible" });
